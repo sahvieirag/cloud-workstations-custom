@@ -8,9 +8,6 @@ Este guia técnico descreve como arquitetar e implementar um ambiente de **Cloud
 
 Para resolver o desafio técnico onde domínios como `github.com` e `bitbucket.org` compartilham os mesmos blocos de IPs públicos para uso pessoal e corporativo, propomos uma arquitetura baseada em **defesa em profundidade**.
 
-> [!NOTE]
-> Esta arquitetura é uma **ideia de implementação e um modelo referencial**. O Google Cloud oferece flexibilidade para que outras abordagens de controle de egress sejam testadas e adaptadas de acordo com as necessidades específicas do cliente. Este exemplo demonstra o potencial máximo de segurança do ecossistema GCP.
-
 ```mermaid
 graph TD
     subgraph Container_Workstation ["Ambiente do Desenvolvedor (Workstation)"]
@@ -78,23 +75,12 @@ Associe endereços IP externos públicos **estáticos** (reservados previamente 
 
 ---
 
-## 4. Prós e Contras de Outras Abordagens de Rede
+## 4. Práticas de Implementação Recomendadas
 
-Como este guia é um modelo referencial de possibilidades, apresentamos abaixo uma comparação de alternativas arquiteturais de isolamento de rede:
-
-| Arquitetura | Prós | Contras | Recomendação |
-| :--- | :--- | :--- | :--- |
-| **Secure Web Proxy (SWP) com TLS Inspection** | - Bloqueio absoluto de push para contas pessoais.<br>- Permite clone seletivo de libs públicas.<br>- Inspeção granular. | - Custo fixo do serviço SWP.<br>- Complexidade de gerenciar a CA e o certificado corporativo no container. | **Recomendada para ambientes corporativos de alta segurança** que utilizam SaaS Cloud pública. |
-| **Isolamento de Egress Total (Sem Cloud NAT)** | - Custo zero de rede.<br>- Isolamento físico total da internet. | - Exige que o GitHub/Bitbucket seja 100% self-hosted em rede privada (VPN/Interconnect).<br>- Impede download de dependências e extensões públicas. | **Ideal se o cliente possuir infraestrutura híbrida estável** e um servidor Git local privado. |
-| **Cloud NAT Tradicional (Sem Proxy L7)** | - Baixíssimo custo (~1 USD/mês).<br>- Fácil de configurar.<br>- Permite baixar libs e extensões públicas facilmente. | - Não impede o push ou clone para contas ou repositórios pessoais (sem controle de URL path). | **Recomendado para fases de POC/Protótipo**, validação de imagem customizada ou ambientes menos restritivos. |
-
----
-
-## 5. Práticas de Implementação Recomendadas
-
-Para a construção de sua primeira infraestrutura de rede segura, recomendamos que sua equipe de plataforma siga as seguintes etapas de implementação:
+Para a construção de sua primeira infraestrutura de rede segura com o objetivo de proteger o acesso ao GitHub/Bitbucket SaaS e evitar vazamento de dados, recomendamos que sua equipe de plataforma siga as seguintes etapas de implementação:
 
 1. **Provisionar a VPC Privada** e habilitar o Private Google Access na subrede principal.
-2. **Definir o Escopo do Git**: Avaliar se sua organização utilizará repositórios na nuvem pública (SaaS) ou se possui servidores locais em infraestrutura privada.
-3. **Avaliar Custos e Riscos**: Decidir entre a simplicidade de custos do Cloud NAT puro para uma fase de POC ou homologações preliminares, contra a blindagem profissional contra vazamentos do Secure Web Proxy (SWP) para o ambiente produtivo final.
-4. **Implementar a Regra de Bloqueio SSH (Porta 22)** desde o primeiro dia de validação do ambiente para forçar o uso do protocolo HTTPS.
+2. **Configurar o Cloud Secure Web Proxy (SWP)** com TLS Inspection integrado ao Certificate Manager para interceptar e auditar o tráfego HTTPS direcionado a `github.com` e `bitbucket.org`.
+3. **Criar políticas de segurança L7 no SWP** que bloqueiem métodos POST/PUT/PATCH para caminhos fora do domínio corporativo (ex: permitindo apenas `github.com/sua-empresa/*` e `bitbucket.org/sua-empresa/*`).
+4. **Implementar a Regra de Bloqueio SSH (Porta 22)** desde o primeiro dia de validação do ambiente para forçar o uso do protocolo HTTPS, permitindo a inspeção de tráfego.
+5. **Associar IPs públicos estáticos ao Cloud NAT** e registrá-los na allowlist de IP das organizações do GitHub/Bitbucket corporativas para restringir o acesso apenas a conexões originadas de workstations autorizadas.

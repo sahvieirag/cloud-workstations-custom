@@ -8,9 +8,6 @@ This technical guide describes how to architect and implement a highly secure **
 
 To address the technical challenge where domains like `github.com` and `bitbucket.org` share the same public IP address blocks for both personal and corporate use, we propose an architecture based on **defense in depth**.
 
-> [!NOTE]
-> This architecture is an **implementation concept and a reference model**. Google Cloud offers the flexibility to test and adapt other egress control approaches based on the client's specific needs. This example demonstrates the maximum security potential of the GCP ecosystem.
-
 ```mermaid
 graph TD
     subgraph Container_Workstation ["Developer Environment (Workstation)"]
@@ -78,23 +75,12 @@ Associate **static** public external IP addresses (previously reserved in GCP Co
 
 ---
 
-## 4. Pros and Cons of Other Network Approaches
+## 4. Recommended Implementation Steps
 
-Since this guide serves as a reference model of possibilities, below is a comparison of alternative network isolation architectures:
-
-| Architecture | Pros | Cons | Recommendation |
-| :--- | :--- | :--- | :--- |
-| **Secure Web Proxy (SWP) with TLS Inspection** | - Absolute block on pushes to personal accounts.<br>- Allows selective cloning of public libs.<br>- Granular inspection. | - SWP service has a fixed cost.<br>- Complexity of managing the CA and enterprise certificate in the container. | **Recommended for high-security corporate environments** using public Cloud SaaS. |
-| **Total Egress Isolation (No Cloud NAT)** | - Zero network cost.<br>- Total physical isolation from the public internet. | - Requires GitHub/Bitbucket to be 100% self-hosted on a private network (VPN/Interconnect).<br>- Prevents downloading public dependencies and extensions. | **Ideal if the client has stable hybrid infrastructure** and a private local Git server. |
-| **Traditional Cloud NAT (No L7 Proxy)** | - Very low cost (~1 USD/month).<br>- Easy to configure.<br>- Allows downloading public libs and extensions easily. | - Does not prevent pushes or clones to/from personal accounts or repositories (no URL path control). | **Recommended for POC/Prototype phases**, custom image validation, or less restrictive environments. |
-
----
-
-## 5. Recommended Implementation Steps
-
-To build your first secure network infrastructure, we recommend that your platform team follows these implementation steps:
+To build your first secure network infrastructure designed to secure access to GitHub/Bitbucket SaaS and prevent data exfiltration, we recommend that your platform team follows these implementation steps:
 
 1. **Provision the Private VPC** and enable Private Google Access on the main subnet.
-2. **Define Git Scope**: Evaluate whether your organization will use public cloud repositories (SaaS) or local servers within private infrastructure.
-3. **Assess Costs and Risks**: Decide between the cost-effectiveness of pure Cloud NAT for a POC or preliminary validations, versus the professional data loss protection of Secure Web Proxy (SWP) for the final production environment.
-4. **Implement the SSH Block Rule (Port 22)** from the very first day of environment validation to force the use of the secure HTTPS protocol.
+2. **Configure Cloud Secure Web Proxy (SWP)** with TLS Inspection integrated with Certificate Manager to intercept and audit outbound HTTPS traffic destined for `github.com` and `bitbucket.org`.
+3. **Create L7 Security Policies in SWP** that strictly block POST/PUT/PATCH methods for URL paths outside the corporate organization namespace (e.g., allowing only `github.com/your-company/*` and `bitbucket.org/your-company/*`).
+4. **Implement the SSH Block Rule (Port 22)** from the very first day of environment validation to force the use of the secure HTTPS protocol, enabling traffic inspection.
+5. **Associate Static Public IPs with Cloud NAT** and register them in the IP Allow List of your corporate GitHub/Bitbucket SaaS organizations to restrict access exclusively to connections originating from authorized workstations.

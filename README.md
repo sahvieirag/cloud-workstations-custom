@@ -31,14 +31,14 @@ secure-cloud-workstations/
 
 ---
 
-## 📐 2. Modelo Referencial e Flexibilidade Arquitetural
+## 📐 2. Modelo Referencial de Arquitetura de Segurança de Rede
 
-No **Asset 1 (Melhores Práticas de Redes)**, detalhamos como a arquitetura baseada em **Secure Web Proxy (SWP) com TLS Inspection** opera para oferecer controles de DLP na camada de aplicação (L7). 
+No **Asset 1 (Melhores Práticas de Redes)**, detalhamos como a arquitetura baseada em **Secure Web Proxy (SWP) com TLS Inspection** opera para oferecer controles de DLP na camada de aplicação (L7) diretamente sobre o tráfego destinado aos serviços de SaaS públicos (GitHub e Bitbucket).
 
-Gostaríamos de destacar que este modelo é uma **ideia de implementação e uma arquitetura referencial**. O Google Cloud oferece ampla flexibilidade para que sua equipe de segurança avalie e teste abordagens alternativas de controle de egress:
-* **Secure Web Proxy (SWP) com TLS Inspection (Modelo Recomendado para SaaS)**: Garante inspeção profunda de caminhos HTTPS para diferenciar contas corporativas de pessoais.
-* **Isolamento de Egress Total (Sem Internet)**: Ideal se a empresa utilizar servidores Git privados locais (On-Premises ou privados em VPC no GCP) via conexões VPN ou Interconnect, eliminando a necessidade de qualquer rota de internet de saída.
-* **Cloud NAT Puro (Modelo Simplificado/POC)**: Útil para fases iniciais de prova de conceito e validação técnica simples, utilizando o controle de IP público estático como principal barreira nos SaaS parceiros.
+Esta arquitetura baseia-se em três pilares integrados de rede que atuam em conjunto para garantir o acesso corporativo seguro e evitar o vazamento de dados:
+* **Cloud Secure Web Proxy (SWP) com TLS Inspection**: Intercepta e decodifica conexões HTTPS de saída destinadas aos domínios SaaS (`github.com` e `bitbucket.org`). Ele inspeciona o caminho exato da URL e os verbos HTTP, autorizando ações corporativas (como GET e POST para `github.com/sua-empresa/*`) enquanto bloqueia POST/push para contas e repositórios pessoais.
+* **Regra de Firewall VPC (Egress DENY na Porta 22)**: Bloqueia o protocolo Git via SSH externo. Isso força todo o tráfego do Git a trafegar obrigatoriamente via HTTPS, passando diretamente pela inspeção L7 do proxy.
+* **Cloud NAT com IPs Públicos Estáticos Fixos**: Centraliza e unifica todo o tráfego de saída das workstations sob IPs conhecidos, permitindo o cadastro desses IPs na lista de liberação de IP (IP Allow List) das organizações SaaS do GitHub/Bitbucket do cliente, restringindo o acesso exclusivamente ao perímetro das workstations autorizadas.
 
 ---
 

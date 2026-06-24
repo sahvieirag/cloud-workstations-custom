@@ -8,9 +8,6 @@ Esta guía técnica describe cómo diseñar e implementar un entorno de **Cloud 
 
 Para resolver el desafío técnico donde los dominios como `github.com` y `bitbucket.org` comparten los mismos bloques de direcciones IP públicas tanto para uso personal como corporativo, proponemos una arquitectura basada en **defensa en profundidad**.
 
-> [!NOTE]
-> Esta arquitectura es una **idea de implementación y un modelo referencial**. Google Cloud ofrece la flexibilidad para que otros enfoques de control de egreso sean probados y adaptados de acuerdo con las necesidades específicas del cliente. Este ejemplo demuestra el potencial máximo de seguridad del ecosistema GCP.
-
 ```mermaid
 graph TD
     subgraph Container_Workstation ["Entorno del Desarrollador (Workstation)"]
@@ -78,23 +75,12 @@ Asocie direcciones IP externas públicas **estáticas** (reservadas previamente 
 
 ---
 
-## 4. Pros y Contras de Otros Enfoques de Red
+## 4. Prácticas de Implementación Recomendadas
 
-Dado que esta guía es un modelo de referencia de posibilidades, a continuación presentamos una comparación de alternativas arquitectónicas de aislamiento de red:
-
-| Arquitectura | Pros | Contras | Recomendación |
-| :--- | :--- | :--- | :--- |
-| **Secure Web Proxy (SWP) con TLS Inspection** | - Bloqueo absoluto de push a cuentas personales.<br>- Permite clone selectivo de librerías públicas.<br>- Inspección granular. | - Costo fijo del servicio SWP.<br>- Complejidad de administrar la CA y el certificado corporativo en el contenedor. | **Recomendada para entornos corporativos de alta seguridad** que utilizan SaaS Cloud pública. |
-| **Aislamiento de Egreso Total (Sin Cloud NAT)** | - Costo cero de red.<br>- Aislamiento físico total de internet. | - Requiere que GitHub/Bitbucket sea 100% self-hosted en red privada (VPN/Interconnect).<br>- Impide la descarga de dependencias y extensiones públicas. | **Ideal si el cliente posee infraestructura híbrida estable** y un servidor Git local privado. |
-| **Cloud NAT Tradicional (Sin Proxy L7)** | - Muy bajo costo (~1 USD/mes).<br>- Fácil de configurar.<br>- Permite descargar librerías y extensiones públicas fácilmente. | - No impide el push o clone hacia/desde cuentas o repositorios personales (sin control de ruta de URL). | **Recomendado para fases de POC/Prototipo**, validación de imagen personalizada o entornos menos restrictivos. |
-
----
-
-## 5. Prácticas de Implementación Recomendadas
-
-Para la construcción de su primera infraestructura de red segura, recomendamos que su equipo de plataforma siga las siguientes etapas de implementación:
+Para la construcción de su primera infraestructura de red segura con el objetivo de proteger el acceso a GitHub/Bitbucket SaaS y evitar la fuga de datos, recomendamos que su equipo de plataforma siga los siguientes pasos de implementación:
 
 1. **Aprovisionar la VPC Privada** y habilitar Private Google Access en la subred principal.
-2. **Definir el Alcance de Git**: Evaluar si su organización utilizará repositorios en la nube pública (SaaS) o si posee servidores locales en la infraestructura privada.
-3. **Evaluar Costos y Riesgos**: Decidir entre la simplicidad de costos del Cloud NAT puro para una fase de POC o validaciones preliminares frente a la protección profesional contra fuga de datos del Secure Web Proxy (SWP) para el entorno de producción final.
-4. **Implementar la Regla de Bloqueo SSH (Puerto 22)** desde el primer día de validación del entorno para forzar el uso del protocolo HTTPS.
+2. **Configurar Cloud Secure Web Proxy (SWP)** con TLS Inspection integrado con Certificate Manager para interceptar y auditar el tráfico HTTPS saliente destinado a `github.com` y `bitbucket.org`.
+3. **Crear políticas de seguridad L7 en SWP** que bloqueen estrictamente los métodos POST/PUT/PATCH para rutas de URL fuera de la organización corporativa (por ejemplo, permitiendo únicamente `github.com/su-empresa/*` y `bitbucket.org/su-empresa/*`).
+4. **Implementar la Regla de Bloqueio SSH (Puerto 22)** desde el primer día de validación del entorno para forzar el uso del protocolo HTTPS, lo que permite la inspección del tráfico.
+5. **Asociar direcciones IP públicas estáticas a Cloud NAT** y registrarlas en la lista de permitidos (IP Allow List) de sus organizaciones corporativas de GitHub/Bitbucket SaaS para restringir el acceso únicamente a las conexiones que se originen en workstations autorizadas.
