@@ -6,14 +6,11 @@ USER root
 # ==============================================================================
 # CONFIGURAÇÃO DE PROXY CORPORATIVO
 # ==============================================================================
-# Define as variáveis de proxy de saída globais para que todas as ferramentas 
-# e a própria IDE utilizem o Secure Web Proxy (SWP) corporativo automaticamente.
-ENV http_proxy="http://[IP_DO_SEU_PROXY]:80" \
-    https_proxy="http://[IP_DO_SEU_PROXY]:80" \
-    no_proxy="metadata.google.internal,169.254.169.254,10.0.0.0/8" \
-    HTTP_PROXY="http://[IP_DO_SEU_PROXY]:80" \
-    HTTPS_PROXY="http://[IP_DO_SEU_PROXY]:80" \
-    NO_PROXY="metadata.google.internal,169.254.169.254,10.0.0.0/8"
+# IMPORTANTE: Para garantir que a compilação no Cloud Build ocorra sem falhas de rede
+# e que a imagem seja 100% portátil e reutilizável, nós NÃO fixamos o IP do proxy aqui dentro.
+# Em vez disso, injetaremos as variáveis 'http_proxy', 'https_proxy' e 'no_proxy'
+# dinamicamente através do painel do GCP na configuração da Workstation (Etapa 4)!
+# Isso é um pilar fundamental de "Segurança e Portabilidade por Design".
 
 # Atualizar pacotes, instalar ferramentas básicas, adicionar a chave de criptografia do Chrome,
 # configurar o repositório estável e instalar o Google Chrome Stable
