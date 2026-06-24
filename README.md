@@ -21,12 +21,18 @@ cloud-workstations-custom/
 ├── scripts/
 │   └── 210_setup_corporate_git.sh # Script de boot da workstation para autocura e persistência de políticas locais
 └── docs/                    # Documentação técnica detalhada e trilíngue
-    ├── security_networking_best_practices.md         # Asset 1 (PT): Melhores Práticas de Redes
-    ├── security_networking_best_practices_en.md      # Asset 1 (EN)
-    ├── security_networking_best_practices_es.md      # Asset 1 (ES)
-    ├── maintenance_access_control_best_practices.md  # Asset 2 (PT): Acesso e Requisitos de Imagem
-    ├── maintenance_access_control_best_practices_en.md # Asset 2 (EN)
-    └── maintenance_access_control_best_practices_es.md # Asset 2 (ES)
+    ├── 0_installation_guide/        # Manual Passo a Passo de Implementação
+    │   ├── setup_guide.md           # Passo a Passo (PT)
+    │   ├── setup_guide_en.md        # Passo a Passo (EN)
+    │   └── setup_guide_es.md        # Passo a Passo (ES)
+    ├── 1_networking/                # Asset 1: Melhores Práticas de Redes
+    │   ├── security_networking_best_practices.md     # Melhores Práticas (PT)
+    │   ├── security_networking_best_practices_en.md  # Melhores Práticas (EN)
+    │   └── security_networking_best_practices_es.md  # Melhores Práticas (ES)
+    └── 2_access_control/            # Asset 2: Acesso e Requisitos de Imagem
+        ├── maintenance_access_control_best_practices.md    # Requisitos (PT)
+        ├── maintenance_access_control_best_practices_en.md # Requisitos (EN)
+        └── maintenance_access_control_best_practices_es.md # Requisitos (ES)
 ```
 
 ---

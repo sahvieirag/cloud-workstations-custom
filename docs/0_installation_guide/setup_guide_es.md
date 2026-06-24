@@ -292,9 +292,9 @@ cloud-workstations-custom/
 ├── scripts/
 │   └── 210_setup_corporate_git.sh (Script de inicializacion ejecutado en el arranque)
 └── docs/
-    ├── networking/                  # Guía de Redes y SWP
-    ├── access_control/              # Guía de Acceso y Mantenimiento
-    └── installation_guide/          # El Paso a Paso Práctico
+    ├── 0_installation_guide/        # El Paso a Paso Práctico
+    ├── 1_networking/                # Guía de Redes y SWP
+    └── 2_access_control/            # Guia de Acceso y Mantenimiento
 ```
 
 #### 📄 Dockerfile de Hardening y Configuración de Proxy
