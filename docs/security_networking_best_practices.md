@@ -90,11 +90,11 @@ Como este guia é um modelo referencial de possibilidades, apresentamos abaixo u
 
 ---
 
-## 5. Práticas de Implementação Recomendadas para o Cliente
+## 5. Práticas de Implementação Recomendadas
 
-Ao apresentar este projeto ao cliente na reunião, destaque as seguintes etapas para a construção da primeira infraestrutura de rede segura:
+Para a construção de sua primeira infraestrutura de rede segura, recomendamos que sua equipe de plataforma siga as seguintes etapas de implementação:
 
 1. **Provisionar a VPC Privada** e habilitar o Private Google Access na subrede principal.
-2. **Definir o Escopo do Git**: Avaliar se o cliente usará o repositório em nuvem pública (SaaS) ou se possui servidores locais na infraestrutura privada.
-3. **Avaliar Custos e Riscos**: Decidir entre a simplicidade de custos do Cloud NAT puro para uma POC contra a blindagem profissional contra vazamentos do Secure Web Proxy (SWP) para o ambiente produtivo.
-4. **Implementar a Regra de Bloqueio SSH (Porta 22)** desde o primeiro dia de validação do ambiente.
+2. **Definir o Escopo do Git**: Avaliar se sua organização utilizará repositórios na nuvem pública (SaaS) ou se possui servidores locais em infraestrutura privada.
+3. **Avaliar Custos e Riscos**: Decidir entre a simplicidade de custos do Cloud NAT puro para uma fase de POC ou homologações preliminares, contra a blindagem profissional contra vazamentos do Secure Web Proxy (SWP) para o ambiente produtivo final.
+4. **Implementar a Regra de Bloqueio SSH (Porta 22)** desde o primeiro dia de validação do ambiente para forçar o uso do protocolo HTTPS.

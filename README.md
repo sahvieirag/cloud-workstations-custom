@@ -1,93 +1,98 @@
-# Guia de Entrega: Configuração de Cloud Workstations Segura
+# Guia de Implantação e Melhores Práticas: Cloud Workstations de Alta Segurança
 
-Olá, Sabrina! É um prazer entregar a você a solução completa, revisada e robusta para o setup seguro de **Google Cloud Workstations** do seu cliente, com foco absoluto no projeto `expanded-flame-422613-e4`.
+Este repositório contém as diretrizes arquiteturais, o modelo referencial de rede e a configuração do container de desenvolvimento para a implantação de um ambiente de desenvolvimento altamente seguro utilizando o **Google Cloud Workstations** na infraestrutura de sua organização.
 
-Este repositório foi reformulado para focar em uma das maiores necessidades de conformidade de segurança empresarial moderna: **permitir que os desenvolvedores utilizem e clonem códigos de serviços SaaS públicos (GitHub e Bitbucket) de escopo corporativo, enquanto impede de forma estrita que realizem o push, vazamento ou compartilhamento de propriedade intelectual para contas ou repositórios pessoais.**
+Nossa arquitetura e diretrizes focam no atendimento a um requisito de segurança crítico do ambiente corporativo moderno: **permitir que os engenheiros e desenvolvedores utilizem e clonem códigos de serviços SaaS públicos (como GitHub e Bitbucket) de escopo estritamente corporativo, ao mesmo tempo em que bloqueia e previne vazamentos ou pushes de código para repositórios ou contas pessoais.**
 
-Toda a arquitetura proposta e as melhores práticas estão documentadas em detalhes e de forma **trilíngue (Português, Inglês e Espanhol)** na pasta `docs/`.
+Todas as melhores práticas, decisões de design de rede e requisitos operacionais estão detalhados de forma **trilíngue (Português, Inglês e Espanhol)** no diretório `docs/`.
 
 ---
 
 ## 🛠️ 1. Estrutura de Arquivos do Repositório
 
-O repositório local está estruturado da seguinte forma:
+O repositório está organizado de forma modular e limpa para facilitar o processo de auditoria e compilação:
 
 ```text
 secure-cloud-workstations/
 ├── Dockerfile               # Definição imutável da imagem customizada (Code OSS + Chrome + Git Hardening)
-├── gcloud_setup.sh          # Script de automação IaC para provisionar VPC, Firewalls, Cloud NAT e Workstations
-├── README.md                # Este documento explicativo e roteiro de homologação
+├── README.md                # Este guia principal com roteiros de implantação e homologação técnica
 ├── config/
-│   └── AGENTS.md            # Cartilha local de diretrizes de desenvolvimento seguro (exibida no workspace)
+│   └── AGENTS.md            # Cartilha local de diretrizes de desenvolvimento seguro exibida no workspace
 ├── scripts/
-│   └── 210_link_agents.sh   # Script de boot da workstation para autocura e persistência do AGENTS.md
-└── docs/                    # Documentações técnicas trilingues detalhadas
+│   └── 210_link_agents.sh   # Script de boot da workstation para autocura e persistência de políticas locais
+└── docs/                    # Documentação técnica detalhada e trilíngue
     ├── security_networking_best_practices.md         # Asset 1 (PT): Melhores Práticas de Redes
     ├── security_networking_best_practices_en.md      # Asset 1 (EN)
     ├── security_networking_best_practices_es.md      # Asset 1 (ES)
     ├── maintenance_access_control_best_practices.md  # Asset 2 (PT): Acesso e Requisitos de Imagem
     ├── maintenance_access_control_best_practices_en.md # Asset 2 (EN)
-    ├── maintenance_access_control_best_practices_es.md # Asset 2 (ES)
-    └── meeting_agenda_workstations.md                # Roteiro de Reunião de 1h com o Cliente (PT)
+    └── maintenance_access_control_best_practices_es.md # Asset 2 (ES)
 ```
 
 ---
 
 ## 📐 2. Modelo Referencial e Flexibilidade Arquitetural
 
-No **Asset 1 (Melhores Práticas de Redes)**, estruturamos os guias para deixar claro para o seu cliente que a arquitetura apresentada utilizando **Secure Web Proxy (SWP) com TLS Inspection** é uma **ideia de implementação e um modelo referencial de possibilidades**. 
+No **Asset 1 (Melhores Práticas de Redes)**, detalhamos como a arquitetura baseada em **Secure Web Proxy (SWP) com TLS Inspection** opera para oferecer controles de DLP na camada de aplicação (L7). 
 
-O Google Cloud oferece flexibilidade para que outras abordagens de controle de redes sejam avaliadas e testadas pelo cliente:
-* **Secure Web Proxy (SWP) com TLS Inspection (Modelo Avançado)**: Permite controle granular de caminhos de URL (DLP) mesmo em SaaS na nuvem pública.
-* **Isolamento Total de Egress (Modelo Fechado)**: Ideal caso o cliente possua servidores de código (GitHub Enterprise Server / Bitbucket Server) hospedados localmente ou em nuvem privada corporativa, dispensando tráfego de saída para a internet.
-* **Cloud NAT Puro (Modelo Simplificado)**: Perfeito para fases de prova de conceito (POC) e validação técnica simples, utilizando o controle de IP público estático como principal barreira.
+Gostaríamos de destacar que este modelo é uma **ideia de implementação e uma arquitetura referencial**. O Google Cloud oferece ampla flexibilidade para que sua equipe de segurança avalie e teste abordagens alternativas de controle de egress:
+* **Secure Web Proxy (SWP) com TLS Inspection (Modelo Recomendado para SaaS)**: Garante inspeção profunda de caminhos HTTPS para diferenciar contas corporativas de pessoais.
+* **Isolamento de Egress Total (Sem Internet)**: Ideal se a empresa utilizar servidores Git privados locais (On-Premises ou privados em VPC no GCP) via conexões VPN ou Interconnect, eliminando a necessidade de qualquer rota de internet de saída.
+* **Cloud NAT Puro (Modelo Simplificado/POC)**: Útil para fases iniciais de prova de conceito e validação técnica simples, utilizando o controle de IP público estático como principal barreira nos SaaS parceiros.
 
 ---
 
-## 🐳 3. Imagens Customizadas: Requisitos e Estrutura Base
+## 🐳 3. Requisitos para Imagens Customizadas
 
-No **Asset 2 (Controle de Acesso e Manutenção)**, documentamos em detalhes nas três línguas os critérios exigidos pelo Google Cloud para que o cliente consiga construir suas próprias imagens customizadas em conformidade com as regras corporativas.
+No **Asset 2 (Controle de Acesso e Manutenção)**, detalhamos nas três línguas as regras obrigatórias e recomendadas para a consolidação de imagens de desenvolvimento customizadas.
 
 ### Requisitos Indispensáveis (Hard Requirements):
-1. **Herança de Imagem Base Oficial**: Deve-se utilizar obrigatoriamente `FROM us-central1-docker.pkg.dev/cloud-workstations-images/predefined/...` no Dockerfile. Isso garante a presença do agente interno de comunicação do plano de controle do GCP.
-2. **Contexto Não-Root ao Final**: Forçar o container a executar como usuário de UID 1000 (`USER user`). Isso impede que o desenvolvedor altere configurações de segurança locais por meio de privilégios de `root`.
-3. **Instalação e Gestão de ca-certificates**: Indispensável para suportar cadeias de certificados CA corporativos (necessários para decriptografia em proxies de inspeção de tráfego L7).
-4. **Git Hardening e Bloqueio de SSH de Saída**: Configurar o `/etc/gitconfig` global como somente leitura para reescrever chamadas SSH (`git@...`) em HTTPS (`https://...`).
+1. **Herança de Imagem Base Oficial**: Todo Dockerfile deve herdar de imagens base oficiais homologadas do Google (ex: `FROM us-central1-docker.pkg.dev/cloud-workstations-images/predefined/code-oss:latest`), garantindo os proxies gRPC de rede do plano de controle.
+2. **Contexto de Execução Não-Root**: Configurar obrigatoriamente `USER user` (UID 1000) ao final da compilação da imagem. Isso impede que os desenvolvedores desativem as regras locais de Git e proxy do sistema.
+3. **Instalação e Gestão de ca-certificates**: Indispensável para suportar cadeias de certificados corporativos privados, necessárias para a decriptografia TLS no Secure Web Proxy.
+4. **Git Hardening**: Arquivo `/etc/gitconfig` global configurado como somente leitura, forçando a reescrita de chamadas SSH para HTTPS.
 
 ### Estrutura Base Recomendada no Container:
-* `/etc/workstation-startup.d/`: Diretório de inicialização para scripts disparados automaticamente como `root` no boot da máquina.
-* `/usr/local/share/ca-certificates/`: Diretório padrão do Debian/Ubuntu para depósito de certificados corporativos privados `.crt`.
-* `/etc/git/templates/hooks/`: Diretório base para armazenar templates imutáveis de ganchos do Git (como o `pre-push` local).
+* `/etc/workstation-startup.d/`: Pasta padrão de scripts executados de forma automática como `root` no boot da máquina após a montagem do disco persistente.
+* `/usr/local/share/ca-certificates/`: Diretório para depósito de certificados corporativos privados `.crt`.
+* `/etc/git/templates/hooks/`: Diretório para armazenar templates imutáveis de ganchos do Git (como o `pre-push` do sistema).
 
 ---
 
-## 🚀 4. Como Executar a Implantação Automatizada (IaC)
+## 🚀 4. Guia de Provisionamento e Criação Segura (GCP Console / gcloud)
 
-Para rodar o script e provisionar o ambiente de homologação no projeto GCP do seu cliente, execute os passos abaixo no terminal local do seu computador:
+Abaixo estão as etapas recomendadas para que sua equipe de plataforma e engenharia de segurança provisione as workstations e a infraestrutura segura de forma estruturada:
 
-### Passo 1: Autenticar no Google Cloud
-Garanta que seu terminal esteja logado com as credenciais administrativas do projeto do cliente:
-```bash
-gcloud auth login
-```
+### Etapa 1: Provisionar a Rede e Regras de Segurança
+1. Crie uma **VPC Privada** com subredes configuradas com o **Acesso Privado do Google (Private Google Access)** ativado.
+2. Defina uma **Regra de Firewall de Saída (Egress)** bloqueando a porta TCP `22` (SSH) com destino a domínios externos de código SaaS (como `github.com` e `bitbucket.org`).
+3. Instancie um **Cloud Router** e um **Cloud NAT** associado, configurando um conjunto de **IPs externos estáticos pré-alocados**. Esses IPs serão cadastrados na lista de controle de acesso (IP Allow List) do seu GitHub/Bitbucket Enterprise corporativo.
 
-### Passo 2: Acessar a pasta e dar permissão de execução
-```bash
-cd /Users/sabrinaguerra/Documents/antigravity/eager-shannon
-chmod +x gcloud_setup.sh
-```
+### Etapa 2: Configurar o Secure Web Proxy (SWP) com TLS Inspection
+1. Aloque um certificado de CA corporativa confiável e seguro no **GCP Certificate Manager** ou **CA Service**.
+2. Crie a instância do **Secure Web Proxy (SWP)** no GCP, associando-a à subrede das workstations.
+3. Configure regras de política de URL L7 para decriptografia HTTPS. Defina as regras de gravação (`POST`/`PUT`/`PATCH`) para autorizar conexões estritamente destinadas à organização corporativa cadastrada (ex: `github.com/sua-empresa/*`).
 
-### Passo 3: Executar o Setup automatizado
-```bash
-./gcloud_setup.sh
-```
-*O script é totalmente idempotente. Ele verificará cada recurso antes de criá-lo (redes VPC, subredes, Cloud Router, Cloud NAT com IP estático reservado, regras de firewall de porta 22, upload da imagem para compilação serverless via Cloud Build, cluster de workstations, configuração blindada de segurança e a instância de workstation individual do desenvolvedor).*
+### Etapa 3: Compilar e Enviar a Imagem Customizada
+1. Compile a imagem Docker baseada no `Dockerfile` fornecido na raiz deste repositório utilizando o **Cloud Build**:
+   ```bash
+   gcloud builds submit --tag us-central1-docker.pkg.dev/[SEU_PROJETO_GCP]/[REGISTRY_NAME]/secure-code-oss:latest .
+   ```
+2. A imagem compilada e endurecida de segurança (hardened) será salva no **Artifact Registry** privado de sua organização.
+
+### Etapa 4: Instanciar o Cloud Workstations
+1. No console do GCP, crie o **Workstation Cluster** apontando para a sua subrede privada e ativando o Private Service Connect se desejar isolamento de IP privado absoluto.
+2. Crie a **Workstation Configuration**:
+   - Associe a imagem Docker customizada armazenada no Artifact Registry.
+   - Configure o ciclo de vida: **Idle Timeout** de 30 minutos e **Auto-stop** diário de 12 horas.
+   - Aplique a criptografia de discos usando chaves gerenciadas pelo cliente (**CMEK**) via Cloud KMS.
+3. Instancie e atribua as estações de trabalho de forma individual aos desenvolvedores, concedendo as permissões do IAM de criador (`roles/workstations.user`) e protegendo o perímetro via **Identity-Aware Proxy (IAP)**.
 
 ---
 
-## 🧪 5. Guia de Homologação e Testes Práticos (Para Fazer com o Cliente)
+## 🧪 5. Roteiro de Homologação e Testes Técnicos
 
-Abaixo está o roteiro de testes passo a passo para validar cada camada de segurança de forma visual e comprovada na frente do cliente:
+Abaixo está o roteiro de testes recomendado para demonstrar e comprovar o funcionamento de cada camada de segurança aplicada no ambiente:
 
 ### Teste A: Verificação de Aplicações Corporativas (Chrome)
 1. No console do GCP, inicie a workstation criada e abra o **Code OSS** no navegador.
@@ -95,7 +100,7 @@ Abaixo está o roteiro de testes passo a passo para validar cada camada de segur
    ```bash
    google-chrome --version
    ```
-   *Resultado esperado:* O terminal deve retornar a versão oficial instalada estável do Google Chrome, comprovando que a imagem customizada foi montada com sucesso.
+   *Resultado esperado:* O terminal deve retornar a versão instalada estável do Google Chrome, comprovando que a imagem customizada foi montada com sucesso.
 
 ### Teste B: Imutabilidade e Autocura do Documento de Diretrizes
 1. No terminal do Code OSS, verifique que o arquivo `AGENTS.md` está visível na raiz do workspace do usuário (`/home/user/AGENTS.md`).
@@ -151,4 +156,4 @@ Este teste valida a barreira de prevenção de vazamento de dados em duas frente
 | **5. Isolamento de Identidade** | GitHub EMU e Atlassian Guard | Alinha identidades com o Provedor de Identidade corporativo (IdP) e desabilita a criação de repositórios pessoais na mesma conta. |
 | **6. Políticas de Governança** | Idle Timeout de 30min + Auto-stop diário | Mitiga riscos de sessões órfãs ou expostas e reduz drasticamente o consumo e os custos de infraestrutura do GCP. |
 
-Com essa estrutura robusta e o material trilíngue impecável, você está extremamente preparada para realizar uma apresentação de altíssimo nível para o seu cliente corporativo! Se precisar de qualquer suporte adicional, estou totalmente à disposição. 🚀
+Se sua equipe de arquitetura ou segurança possuir qualquer dúvida ou necessidade de customização nos templates fornecidos, nossa equipe técnica está totalmente à disposição para colaborar! 🚀

@@ -90,11 +90,11 @@ Since this guide serves as a reference model of possibilities, below is a compar
 
 ---
 
-## 5. Recommended Implementation Steps for the Client
+## 5. Recommended Implementation Steps
 
-When presenting this project to the client, highlight the following steps for building the first secure network infrastructure:
+To build your first secure network infrastructure, we recommend that your platform team follows these implementation steps:
 
 1. **Provision the Private VPC** and enable Private Google Access on the main subnet.
-2. **Define Git Scope**: Evaluate whether the client will use public cloud repositories (SaaS) or local servers in their private infrastructure.
-3. **Assess Costs and Risks**: Decide between the cost-effectiveness of pure Cloud NAT for a POC versus the professional data loss protection of Secure Web Proxy (SWP) for production.
-4. **Implement the SSH Block Rule (Port 22)** from the very first day of environment validation.
+2. **Define Git Scope**: Evaluate whether your organization will use public cloud repositories (SaaS) or local servers within private infrastructure.
+3. **Assess Costs and Risks**: Decide between the cost-effectiveness of pure Cloud NAT for a POC or preliminary validations, versus the professional data loss protection of Secure Web Proxy (SWP) for the final production environment.
+4. **Implement the SSH Block Rule (Port 22)** from the very first day of environment validation to force the use of the secure HTTPS protocol.

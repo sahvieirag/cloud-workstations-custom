@@ -32,7 +32,7 @@ gantt
 
 Uma imagem customizada no Cloud Workstations é um container Docker herdado de uma imagem base homologada que é empacotado com ferramentas de desenvolvimento, utilitários corporativos e configurações imutáveis de conformidade. 
 
-O cliente deve seguir estes requisitos indispensáveis e estruturas recomendadas para criar e manter imagens de desenvolvimento seguras:
+Recomenda-se seguir estes requisitos indispensáveis e estruturas recomendadas para criar e manter imagens de desenvolvimento seguras:
 
 ### 1.1 Requisitos Indispensáveis (Hard Requirements)
 
@@ -112,9 +112,9 @@ Estações de trabalho esquecidas ligadas são focos de risco à segurança e de
 
 ## 4. Práticas de Isolamento de Identidade em SaaS Cloud
 
-Além dos controles internos do GCP, para consolidar a barreira de exfiltração de dados para contas pessoais de GitHub/Bitbucket do usuário corporativo, oriente o cliente a configurar:
+Além dos controles internos do GCP, para consolidar a barreira de exfiltração de dados para contas pessoais de GitHub/Bitbucket do usuário corporativo, é altamente recomendada a adoção das seguintes soluções de identidade corporativa:
 
 1. **GitHub Enterprise Managed Users (EMU)**:
    - Configura identidades de usuários pertencentes inteiramente à corporação, impedindo a criação de perfis pessoais ou forking para fora do controle da empresa.
 2. **Atlassian Guard**:
-   - Gerencia e restringe o acesso ao Bitbucket Cloud baseado nas contas corporativas sincronizadas diretamente com o provedor de identidade (IdP) do cliente.
+   - Gerencia e restringe o acesso ao Bitbucket Cloud baseado nas contas corporativas sincronizadas diretamente com o provedor de identidade (IdP) da organização.
