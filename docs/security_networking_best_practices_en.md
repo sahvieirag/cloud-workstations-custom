@@ -31,11 +31,11 @@ graph TD
         PersonalSaaS["Personal SaaS (Push BLOCKED)"]
     end
 
-    Git -->|1. HTTPS Traffic (Port 443)| FW
+    Git -->|1. HTTPS Traffic on Port 443| FW
     FW -->|2. Route to Proxy| SWP
     SWP -->|3. Path/HTTP Verb Inspection| TLS
     TLS -->|4. If Corp Org| NAT
-    TLS -.->|4. If Personal Org (HTTP 403)| PersonalSaaS
+    TLS -.->|4. If Personal Org - HTTP 403| PersonalSaaS
     NAT -->|5. IP Whitelisted| GitHubCorp
     NAT -->|5. IP Whitelisted| BitbucketCorp
 ```
