@@ -1,102 +1,100 @@
-# Asset 1: Melhores Práticas de Redes e Isolamento de Tráfego
+# Asset 1: Melhores Práticas de Redes e Isolamento de Tráfego SaaS
 
-Este guia técnico descreve como arquitetar e implementar um ambiente de **Cloud Workstations** altamente isolado no Google Cloud Platform (GCP). O objetivo é garantir que as máquinas virtuais de desenvolvimento se comuniquem de forma estritamente privada, impedindo o vazamento de dados corporativos e permitindo saída apenas para o GitHub e destinos homologados.
+Este guia técnico descreve como arquitetar e implementar um ambiente de **Cloud Workstations** altamente seguro no Google Cloud Platform (GCP). O foco principal deste guia é **permitir o acesso a serviços SaaS na nuvem (GitHub.com e Bitbucket.org) para fins corporativos, enquanto impede estritamente que os usuários finais compartilhem ou vazem propriedade intelectual para repositórios ou contas pessoais.**
 
 ---
 
-## 1. Arquitetura de Rede Privada (VPC)
+## 1. Visão Geral da Arquitetura Segura
 
-Para eliminar qualquer exposição à internet pública, a base da infraestrutura deve ser construída sobre uma VPC privada configurada para o isolamento completo de egress e ingress.
+Para resolver o desafio técnico onde domínios como `github.com` e `bitbucket.org` compartilham os mesmos blocos de IPs públicos para uso pessoal e corporativo, propomos uma arquitetura baseada em **defesa em profundidade**.
+
+> [!NOTE]
+> Esta arquitetura é uma **ideia de implementação e um modelo referencial**. O Google Cloud oferece flexibilidade para que outras abordagens de controle de egress sejam testadas e adaptadas de acordo com as necessidades específicas do cliente. Este exemplo demonstra o potencial máximo de segurança do ecossistema GCP.
 
 ```mermaid
 graph TD
-    subgraph VPC_Cliente ["VPC Privada do Cliente"]
-        subgraph Subnet_Workstations ["Subnet de Workstations (10.10.0.0/24)"]
-            WS["VM da Workstation (Sem IP Público)"]
-        end
-        PGA["Private Google Access (Internal APIs)"]
-        SWP["Cloud Secure Web Proxy (SWP)"]
+    subgraph Container_Workstation ["Ambiente do Desenvolvedor (Workstation)"]
+        Git["Comando Git (HTTPS)"]
+        CA["Certificado CA do Proxy instalado"]
     end
 
-    GitHub["GitHub (Self-Hosted ou SaaS)"]
-    GoogleAPIs["Artifact Registry & Logging"]
-    OutraInternet["Internet Pública Geral"]
+    subgraph VPC_GCP ["VPC Privada do Cliente"]
+        FW["Firewall GCP: Bloqueia Porta 22 (SSH)"]
+        SWP["Cloud Secure Web Proxy (SWP)"]
+        TLS["TLS Inspection (Decriptografia e Inspeção)"]
+    end
 
-    WS -->|Egress Privado| PGA
-    PGA -->|IP Interno| GoogleAPIs
-    WS -->|Egress Filtrado por URL| SWP
-    SWP -->|Acesso HTTPS Exclusivo| GitHub
-    WS -.->|Egress BLOQUEADO via Firewall| OutraInternet
+    subgraph Internet_SaaS ["Serviços Cloud SaaS"]
+        NAT["Cloud NAT (IPs Públicos Estáticos Fixos)"]
+        GitHubCorp["GitHub Corp: github.com/sua-empresa/*"]
+        BitbucketCorp["Bitbucket Corp: bitbucket.org/sua-empresa/*"]
+        PersonalSaaS["SaaS Pessoal (Push BLOQUEADO)"]
+    end
+
+    Git -->|1. Tráfego HTTPS (Porta 443)| FW
+    FW -->|2. Encaminha para Proxy| SWP
+    SWP -->|3. Inspeção de Path/Verbo HTTP| TLS
+    TLS -->|4. Se Org Corporativa| NAT
+    TLS -.->|4. Se Org Pessoal (HTTP 403)| PersonalSaaS
+    NAT -->|5. IP Whitelisted| GitHubCorp
+    NAT -->|5. IP Whitelisted| BitbucketCorp
 ```
 
-### 1.1 Cluster de Workstations Privado (Private Gateway)
-Por padrão, um cluster de workstations expõe seu gateway de conexão (Control Plane) por meio de um IP público protegido pelo Cloud Identity-Aware Proxy (IAP). 
-* **Melhor Prática**: Se o cliente possuir conexões híbridas (como VPN Site-to-Step ou Cloud Interconnect), você deve criar o cluster com a flag `--enable-private-endpoint`. Isso atribui um endereço IP interno ao gateway de controle, garantindo que o cluster e as IDEs fiquem completamente invisíveis para a internet pública. O acesso só será possível para quem estiver conectado fisicamente à rede corporativa do cliente.
+---
 
-### 1.2 Desativação de IPs Públicos nas VMs
-* **Melhor Prática**: Configurar a Workstation Configuration com a flag `--disable-public-ip-addresses`. Isso garante que as instâncias (VMs) criadas para cada desenvolvedor tenham apenas IPs privados internos dentro da subrede selecionada. Elas nunca receberão um IP externo.
+## 2. Elementos Fundamentais de Rede e Isolamento
 
-### 1.3 Private Google Access (Acesso Privado do Google)
-* **Melhor Prática**: Habilitar obrigatoriamente a opção `Private Google Access` na subrede da VPC. 
-* **Por que fazer?** Sem IPs públicos e sem rota de internet padrão, as VMs não conseguiriam falar com o Artifact Registry para baixar a imagem Docker, nem enviar logs para o Cloud Logging. O Private Google Access faz com que as VMs falem com todas as APIs do Google utilizando rotas internas privadas de alta velocidade.
+### 2.1 Rede VPC 100% Privada (Sem IPs Públicos)
+As VMs subjacentes às Cloud Workstations devem ser provisionadas sem endereços IP públicos externos (`--disable-public-ip-addresses` na configuração da workstation). Todo o tráfego de gerenciamento de infraestrutura deve ocorrer através de rotas privadas gerenciadas pela rede do Google, protegidas pelo **Identity-Aware Proxy (IAP)**.
+
+### 2.2 Private Google Access (Acesso Privado)
+Habilite o **Private Google Access** na subrede da VPC. Sem IP público e sem internet direta, as workstations dependem dessa funcionalidade para baixar imagens base do Artifact Registry, registrar métricas no Cloud Logging e comunicar-se internamente com as APIs do GCP utilizando rotas privadas de alto desempenho.
 
 ---
 
-## 2. Controle de Saída Restrito (Egress Isolation)
+## 3. Estratégia de Restrição de Escrita SaaS (GitHub & Bitbucket)
 
-O maior risco em ambientes de desenvolvimento é o tráfego de saída (exfiltração de código ou downloads de dependências maliciosas). Existem duas abordagens principais para restringir a saída mantendo o acesso ao GitHub:
+Para restringir o push de código a namespaces pessoais mantendo o acesso corporativo, são empregadas três estratégias conjuntas de rede:
 
-### Abordagem A: GitHub Totalmente Interno (Self-Hosted na Rede Privada)
-Se o GitHub auto-hospedado do cliente reside na rede privada do próprio cliente (acessível via VPN/Interconnect ou VPC Peering):
-1. **Remover o Cloud NAT**: Não associe nenhum gateway Cloud NAT à VPC das workstations. Sem o NAT, as workstations não possuem capacidade física de falar com o protocolo IPv4 público da internet.
-2. **Firewall de Egress Restrito**:
-   - Crie uma regra com prioridade baixa (ex: `65000`) para bloquear todo o tráfego de saída (`0.0.0.0/0`).
-   - Crie uma regra com prioridade alta (ex: `1000`) para permitir tráfego TCP (portas `22` e `443`) apontando exclusivamente para o bloco de IPs privados (`CIDR`) onde reside o servidor GitHub interno do cliente.
+### 3.1 Cloud Secure Web Proxy (SWP) com TLS Inspection
+Um firewall L3/L4 comum de mercado não consegue filtrar caminhos de URL HTTPS. Para o GCP, a melhor prática para filtragem de camada de aplicação (L7) é o **Cloud Secure Web Proxy (SWP)** integrado ao **TLS Inspection**.
 
----
+1. **Decriptografia Segura**: O SWP intercepta conexões HTTPS de saída destinadas ao GitHub e Bitbucket e as decriptografa temporariamente utilizando uma chave de CA corporativa gerada e controlada pelo cliente (configurada via GCP Certificate Manager / CA Service). O certificado correspondente é instalado como confiável no container da workstation.
+2. **Inspeção de URL Path**: Com o tráfego aberto, o proxy analisa a URL exata do repositório:
+   - **Permitido**: `https://github.com/sua-empresa/*` (GET e POST)
+   - **Permitido**: `https://bitbucket.org/sua-empresa/*` (GET e POST)
+   - **Bloqueado**: `https://github.com/perfil-pessoal/*` (Qualquer POST/push)
+3. **Bloqueio Seletivo por Verbos HTTP**: É possível configurar o SWP para permitir comandos de leitura (`GET` para `git clone/pull`) para repositórios públicos externos (facilitando download de pacotes públicos), mas **bloquear estritamente qualquer requisição de escrita** (`POST`, `PUT`, `PATCH`) para destinos fora da organização corporativa homologada.
 
-### Abordagem B: GitHub Externo (SaaS / github.com) com Controle de URL
-Se os desenvolvedores precisam acessar o GitHub SaaS (`github.com`) ou sites homologados na nuvem pública, mas você deseja bloquear todo o resto da internet, um firewall tradicional por IP é ineficiente porque os IPs de grandes SaaS mudam constantemente.
-* **Melhor Prática**: Utilizar o **Cloud Secure Web Proxy (SWP)** do GCP.
+### 3.2 Bloqueio de SSH (Porta 22) de Saída
+O protocolo Git sobre SSH (`git@github.com:...`) trafega por meio de um stream binário criptografado fim a fim sobre a porta TCP 22. Como o SSH não possui o conceito de cabeçalhos ou caminhos de URL HTTP, ele contorna completamente as regras de inspeção do Secure Web Proxy.
+* **Melhor Prática**: Implementar uma regra de Firewall VPC com ação `DENY` e direção `EGRESS` para impedir qualquer tráfego de saída destinado à porta `22` na subrede das workstations.
+* **Funcionamento**: Isso força o desenvolvedor e as ferramentas Git do container a utilizarem obrigatoriamente o transporte HTTPS na porta `443`, que passa pelo filtro do proxy L7.
 
-#### Como configurar o Cloud Secure Web Proxy (SWP):
-O SWP é um serviço de proxy web gerenciado que faz a filtragem de tráfego de saída na camada de aplicação (HTTP/HTTPS) usando nomes de domínio (FQDNs) e caminhos de URL, em vez de endereços IP.
-
-1. **Criar a Subrede de Proxy**: O SWP requer uma subrede dedicada do tipo `REGIONAL_MANAGED_PROXY` na VPC.
-2. **Definir a URL List (Lista de Permissões)**:
-   Crie um recurso de regras contendo os domínios oficiais que o desenvolvedor pode acessar. Para o GitHub, inclua:
-   - `*.github.com`
-   - `github.com`
-   - `*.githubusercontent.com` (necessário para baixar arquivos crus e extensões do Code OSS)
-3. **Criar o Secure Web Proxy**: Implante a instância do proxy apontando para a VPC e para a lista de permissões criada.
-4. **Forçar o Tráfego pelo Proxy**:
-   Na imagem Docker das workstations (ou via script de inicialização), configure as variáveis de ambiente globais do sistema operacional para apontar para o IP interno do Secure Web Proxy:
-   ```bash
-   export http_proxy="http://[IP_INTERNO_DO_PROXY]:443"
-   export https_proxy="http://[IP_INTERNO_DO_PROXY]:443"
-   export no_proxy="metadata.google.internal,169.254.169.254"
-   ```
-5. **Bloquear Saídas Diretas**: Configure o firewall do GCP para bloquear qualquer tráfego TCP de saída direto nas portas `80` e `443` das workstations que não seja direcionado ao IP do proxy web.
+### 3.3 Cloud NAT com IPs Estáticos (IP Whitelisting)
+Associe endereços IP externos públicos **estáticos** (reservados previamente no GCP Compute Engine) ao gateway **Cloud NAT** da VPC, em vez de utilizar alocação dinâmica automática de IPs.
+* **Benefício**: Registre esses IPs estáticos da empresa nas regras de proteção de IP (IP Allow List) do GitHub Enterprise Cloud ou Bitbucket Cloud da organização.
+* **Resultado**: O acesso ao SaaS corporativo só será aceito quando originado das workstations seguras (que saem pelo NAT com os IPs cadastrados). Se um desenvolvedor tentar acessar repositórios corporativos de sua máquina pessoal, o SaaS rejeitará a conexão por estar fora da faixa de IPs permitida.
 
 ---
 
-### Abordagem C: Acesso Geral Seguro e Econômico (Cloud NAT - Ideal para Protótipos)
-Se o cliente está na fase de testes (prototipação), ainda não possui um GitHub self-hosted, e quer **evitar o custo elevado do Secure Web Proxy (SWP)**, a melhor solução técnica é usar o **Cloud NAT**.
+## 4. Prós e Contras de Outras Abordagens de Rede
 
-1. **Como funciona**: O Cloud NAT permite que as VMs das workstations (que não possuem IPs públicos) iniciem conexões de saída (Egress) seguras com a internet para acessar o `github.com` público, buscar dependências ou baixar extensões do Code OSS.
-2. **Por que é seguro?** Como o Cloud NAT é um proxy de saída unidirecional de alta capacidade, nenhum atacante ou bot na internet consegue rastrear, ler portas ou iniciar uma conexão direta de entrada (Ingress) com as VMs das workstations.
-3. **Custo-Benefício imbatível**: Custa aproximadamente **1,00 USD por mês** como taxa fixa da porta NAT na região (us-central1), mais taxas mínimas por gigabyte processado, comparado com os mais de 55,00 USD fixos mensais do Secure Web Proxy.
-4. **Modo de Implantação**: Deixe as regras estritas de bloqueio total de saída comentadas (em standby) e configure o Cloud NAT na VPC. Quando o cliente amadurecer a infraestrutura de produção, as regras de firewall de egress podem ser ativadas para restringir o tráfego a destinos específicos.
+Como este guia é um modelo referencial de possibilidades, apresentamos abaixo uma comparação de alternativas arquiteturais de isolamento de rede:
+
+| Arquitetura | Prós | Contras | Recomendação |
+| :--- | :--- | :--- | :--- |
+| **Secure Web Proxy (SWP) com TLS Inspection** | - Bloqueio absoluto de push para contas pessoais.<br>- Permite clone seletivo de libs públicas.<br>- Inspeção granular. | - Custo fixo do serviço SWP.<br>- Complexidade de gerenciar a CA e o certificado corporativo no container. | **Recomendada para ambientes corporativos de alta segurança** que utilizam SaaS Cloud pública. |
+| **Isolamento de Egress Total (Sem Cloud NAT)** | - Custo zero de rede.<br>- Isolamento físico total da internet. | - Exige que o GitHub/Bitbucket seja 100% self-hosted em rede privada (VPN/Interconnect).<br>- Impede download de dependências e extensões públicas. | **Ideal se o cliente possuir infraestrutura híbrida estável** e um servidor Git local privado. |
+| **Cloud NAT Tradicional (Sem Proxy L7)** | - Baixíssimo custo (~1 USD/mês).<br>- Fácil de configurar.<br>- Permite baixar libs e extensões públicas facilmente. | - Não impede o push ou clone para contas ou repositórios pessoais (sem controle de URL path). | **Recomendado para fases de POC/Protótipo**, validação de imagem customizada ou ambientes menos restritivos. |
 
 ---
 
+## 5. Práticas de Implementação Recomendadas para o Cliente
 
-## 3. Prevenção Avançada contra Exfiltração: VPC Service Controls (VPC-SC)
+Ao apresentar este projeto ao cliente na reunião, destaque as seguintes etapas para a construção da primeira infraestrutura de rede segura:
 
-Para cenários onde a segurança de dados é crítica, o cliente deve configurar o **VPC Service Controls**.
-* **Como funciona**: O VPC-SC cria um perímetro de segurança em nível de organização que isola recursos de serviços do Google (como Artifact Registry, Cloud Storage e Cloud Workstations).
-* **Benefício**: Mesmo se um desenvolvedor tentar usar suas chaves pessoais para copiar dados da workstation para um bucket público de outra conta do Google Cloud, o VPC-SC bloqueará a transação, pois o tráfego de saída de dados só é permitido dentro do perímetro de segurança homologado da organização do cliente.
-* **O que colocar no perímetro**:
-  - O projeto de Cloud Workstations.
-  - O projeto do Artifact Registry (armazenamento de imagens).
-  - Os buckets do Cloud Storage utilizados no Cloud Build.
+1. **Provisionar a VPC Privada** e habilitar o Private Google Access na subrede principal.
+2. **Definir o Escopo do Git**: Avaliar se o cliente usará o repositório em nuvem pública (SaaS) ou se possui servidores locais na infraestrutura privada.
+3. **Avaliar Custos e Riscos**: Decidir entre a simplicidade de custos do Cloud NAT puro para uma POC contra a blindagem profissional contra vazamentos do Secure Web Proxy (SWP) para o ambiente produtivo.
+4. **Implementar a Regra de Bloqueio SSH (Porta 22)** desde o primeiro dia de validação do ambiente.

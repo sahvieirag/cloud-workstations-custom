@@ -1,137 +1,154 @@
 # Guia de Entrega: Configuração de Cloud Workstations Segura
 
-Olá, Sabrina! É um prazer entregar a solução completa e blindada para o primeiro setup de **Google Cloud Workstations** do seu cliente no projeto `workstations-demo-491214`.
+Olá, Sabrina! É um prazer entregar a você a solução completa, revisada e robusta para o setup seguro de **Google Cloud Workstations** do seu cliente, com foco absoluto no projeto `expanded-flame-422613-e4`.
 
-Este guia resume os componentes que criamos, como executar a implantação automatizada no GCP e como realizar testes práticos junto com seu cliente para validar as camadas de rede e segurança.
+Este repositório foi reformulado para focar em uma das maiores necessidades de conformidade de segurança empresarial moderna: **permitir que os desenvolvedores utilizem e clonem códigos de serviços SaaS públicos (GitHub e Bitbucket) de escopo corporativo, enquanto impede de forma estrita que realizem o push, vazamento ou compartilhamento de propriedade intelectual para contas ou repositórios pessoais.**
+
+Toda a arquitetura proposta e as melhores práticas estão documentadas em detalhes e de forma **trilíngue (Português, Inglês e Espanhol)** na pasta `docs/`.
 
 ---
 
-## 1. Estrutura de Arquivos Criada no Repositório
+## 🛠️ 1. Estrutura de Arquivos do Repositório
 
-Organizamos o repositório local (`/Users/sabrinaguerra/Documents/antigravity/eager-shannon`) com uma estrutura limpa e profissional, pronta para compilação:
+O repositório local está estruturado da seguinte forma:
 
 ```text
-eager-shannon/
-├── Dockerfile               # Definição da imagem (Code OSS + Google Chrome + Arquivos de Segurança)
-├── gcloud_setup.sh          # Script IaC em Shell totalmente documentado para provisionamento do GCP
+secure-cloud-workstations/
+├── Dockerfile               # Definição imutável da imagem customizada (Code OSS + Chrome + Git Hardening)
+├── gcloud_setup.sh          # Script de automação IaC para provisionar VPC, Firewalls, Cloud NAT e Workstations
+├── README.md                # Este documento explicativo e roteiro de homologação
 ├── config/
-│   └── AGENTS.md            # Cartilha de diretrizes de desenvolvimento seguro do seu cliente
-└── scripts/
-    └── 210_link_agents.sh   # Script de boot da workstation para autocura do link simbólico
+│   └── AGENTS.md            # Cartilha local de diretrizes de desenvolvimento seguro (exibida no workspace)
+├── scripts/
+│   └── 210_link_agents.sh   # Script de boot da workstation para autocura e persistência do AGENTS.md
+└── docs/                    # Documentações técnicas trilingues detalhadas
+    ├── security_networking_best_practices.md         # Asset 1 (PT): Melhores Práticas de Redes
+    ├── security_networking_best_practices_en.md      # Asset 1 (EN)
+    ├── security_networking_best_practices_es.md      # Asset 1 (ES)
+    ├── maintenance_access_control_best_practices.md  # Asset 2 (PT): Acesso e Requisitos de Imagem
+    ├── maintenance_access_control_best_practices_en.md # Asset 2 (EN)
+    ├── maintenance_access_control_best_practices_es.md # Asset 2 (ES)
+    └── meeting_agenda_workstations.md                # Roteiro de Reunião de 1h com o Cliente (PT)
 ```
 
 ---
 
-## 2. Passo a Passo de Execução da Infraestrutura
+## 📐 2. Modelo Referencial e Flexibilidade Arquitetural
 
-Para criar os recursos no GCP do seu cliente, siga os passos abaixo no terminal local:
+No **Asset 1 (Melhores Práticas de Redes)**, estruturamos os guias para deixar claro para o seu cliente que a arquitetura apresentada utilizando **Secure Web Proxy (SWP) com TLS Inspection** é uma **ideia de implementação e um modelo referencial de possibilidades**. 
 
-### Passo 1: Autenticar no GCP
-Garanta que você está autenticada na conta do cliente com as permissões necessárias (`Owner` ou `Editor` + `Workstation Admin`):
+O Google Cloud oferece flexibilidade para que outras abordagens de controle de redes sejam avaliadas e testadas pelo cliente:
+* **Secure Web Proxy (SWP) com TLS Inspection (Modelo Avançado)**: Permite controle granular de caminhos de URL (DLP) mesmo em SaaS na nuvem pública.
+* **Isolamento Total de Egress (Modelo Fechado)**: Ideal caso o cliente possua servidores de código (GitHub Enterprise Server / Bitbucket Server) hospedados localmente ou em nuvem privada corporativa, dispensando tráfego de saída para a internet.
+* **Cloud NAT Puro (Modelo Simplificado)**: Perfeito para fases de prova de conceito (POC) e validação técnica simples, utilizando o controle de IP público estático como principal barreira.
+
+---
+
+## 🐳 3. Imagens Customizadas: Requisitos e Estrutura Base
+
+No **Asset 2 (Controle de Acesso e Manutenção)**, documentamos em detalhes nas três línguas os critérios exigidos pelo Google Cloud para que o cliente consiga construir suas próprias imagens customizadas em conformidade com as regras corporativas.
+
+### Requisitos Indispensáveis (Hard Requirements):
+1. **Herança de Imagem Base Oficial**: Deve-se utilizar obrigatoriamente `FROM us-central1-docker.pkg.dev/cloud-workstations-images/predefined/...` no Dockerfile. Isso garante a presença do agente interno de comunicação do plano de controle do GCP.
+2. **Contexto Não-Root ao Final**: Forçar o container a executar como usuário de UID 1000 (`USER user`). Isso impede que o desenvolvedor altere configurações de segurança locais por meio de privilégios de `root`.
+3. **Instalação e Gestão de ca-certificates**: Indispensável para suportar cadeias de certificados CA corporativos (necessários para decriptografia em proxies de inspeção de tráfego L7).
+4. **Git Hardening e Bloqueio de SSH de Saída**: Configurar o `/etc/gitconfig` global como somente leitura para reescrever chamadas SSH (`git@...`) em HTTPS (`https://...`).
+
+### Estrutura Base Recomendada no Container:
+* `/etc/workstation-startup.d/`: Diretório de inicialização para scripts disparados automaticamente como `root` no boot da máquina.
+* `/usr/local/share/ca-certificates/`: Diretório padrão do Debian/Ubuntu para depósito de certificados corporativos privados `.crt`.
+* `/etc/git/templates/hooks/`: Diretório base para armazenar templates imutáveis de ganchos do Git (como o `pre-push` local).
+
+---
+
+## 🚀 4. Como Executar a Implantação Automatizada (IaC)
+
+Para rodar o script e provisionar o ambiente de homologação no projeto GCP do seu cliente, execute os passos abaixo no terminal local do seu computador:
+
+### Passo 1: Autenticar no Google Cloud
+Garanta que seu terminal esteja logado com as credenciais administrativas do projeto do cliente:
 ```bash
 gcloud auth login
 ```
 
-### Passo 2: Definir Permissões de Execução
-Acesse a pasta do repositório no seu computador e dê permissão de execução ao nosso script IaC:
+### Passo 2: Acessar a pasta e dar permissão de execução
 ```bash
+cd /Users/sabrinaguerra/Documents/antigravity/eager-shannon
 chmod +x gcloud_setup.sh
 ```
 
-### Passo 3: Executar o Setup Automatizado
-Rode o script para provisionar toda a infraestrutura e compilar a imagem. 
-*(O script levará alguns minutos pois ele fará o upload dos arquivos para o **Cloud Build** compilar de forma totalmente serverless na nuvem, criará a rede VPC, os firewalls, o cluster do Workstations e a configuração blindada)*:
+### Passo 3: Executar o Setup automatizado
 ```bash
 ./gcloud_setup.sh
 ```
-
-> [!NOTE]
-> No arquivo `gcloud_setup.sh`, a variável `DEV_EMAIL` está pré-definida com um valor fictício e a variável `GITHUB_SELF_HOSTED_RANGE` está definida com o bloco `10.240.0.0/16`. Sinta-se à vontade para ajustar esses valores diretamente no script antes de rodar, ou usá-los como demonstração!
+*O script é totalmente idempotente. Ele verificará cada recurso antes de criá-lo (redes VPC, subredes, Cloud Router, Cloud NAT com IP estático reservado, regras de firewall de porta 22, upload da imagem para compilação serverless via Cloud Build, cluster de workstations, configuração blindada de segurança e a instância de workstation individual do desenvolvedor).*
 
 ---
 
-## 3. Guia de Homologação e Testes (Para Fazer com o Cliente)
+## 🧪 5. Guia de Homologação e Testes Práticos (Para Fazer com o Cliente)
 
-Abaixo está o roteiro de testes para validar se todos os requisitos de segurança e ferramentas solicitados estão operando conforme o planejado.
+Abaixo está o roteiro de testes passo a passo para validar cada camada de segurança de forma visual e comprovada na frente do cliente:
 
-### Teste A: Verificação de Ferramentas (Chrome)
-1. Inicie a workstation criada e abra o console do **Code OSS** no navegador.
-2. Abra um novo terminal integrado no Code OSS.
-3. Execute o comando abaixo para confirmar que o Chrome está instalado na máquina virtual do container:
+### Teste A: Verificação de Aplicações Corporativas (Chrome)
+1. No console do GCP, inicie a workstation criada e abra o **Code OSS** no navegador.
+2. Abra o terminal integrado do Code OSS e execute:
    ```bash
    google-chrome --version
    ```
-   *Resultado esperado:* O terminal deve retornar a versão oficial estável do Google Chrome instalada.
+   *Resultado esperado:* O terminal deve retornar a versão oficial instalada estável do Google Chrome, comprovando que a imagem customizada foi montada com sucesso.
+
+### Teste B: Imutabilidade e Autocura do Documento de Diretrizes
+1. No terminal do Code OSS, verifique que o arquivo `AGENTS.md` está visível na raiz do workspace do usuário (`/home/user/AGENTS.md`).
+2. Tente editar e salvar o arquivo diretamente no editor Code OSS.
+   - *Resultado esperado:* O editor exibirá um erro de permissão bloqueando a gravação (`Permission Denied`), provando que as diretrizes são de posse do `root` e não podem ser adulteradas pelo desenvolvedor comum.
+3. No terminal, force a exclusão do arquivo:
+   ```bash
+   rm /home/user/AGENTS.md
+   ```
+4. Reinicie a workstation (pare e inicie novamente pelo console do GCP ou pelo botão da IDE).
+   - *Resultado esperado:* O arquivo `AGENTS.md` reaparece intacto! Nosso script de boot `/etc/workstation-startup.d/210_link_agents.sh` detectou a ausência e recriou o link simbólico automaticamente.
+
+### Teste C: Bloqueio do Protocolo SSH (Porta 22) de Rede
+1. No terminal do Code OSS, tente estabelecer uma conexão SSH de saída direta com o GitHub ou Bitbucket:
+   ```bash
+   ssh -T git@github.com
+   ```
+   - *Resultado esperado:* A conexão deve falhar por timeout ou ser recusada imediatamente. Isso prova que a regra de firewall de egress da VPC bloqueou com sucesso a porta `22`, impedindo desvios criptografados que contornam a inspeção de tráfego.
+
+### Teste D: Clonagem de Repositórios HTTPS Permitidos
+1. No terminal, tente realizar o clone de um repositório corporativo que corresponda à organização permitida:
+   ```bash
+   git clone https://github.com/sua-empresa/projeto-teste.git
+   ```
+   - *Resultado esperado:* Conexão autorizada e clone executado com sucesso (desde que as credenciais e acessos estejam corretos no SaaS).
+
+### Teste E: Bloqueio de Push para Contas Pessoais (DLP Ativo)
+Este teste valida a barreira de prevenção de vazamento de dados em duas frentes de controle:
+
+1. **Tentativa de Push por Repositório Não Autorizado (Filtro local do container)**:
+   - Tente associar o repositório local a um destino pessoal do desenvolvedor fora do escopo corporativo:
+     ```bash
+     git remote set-url origin https://github.com/perfil-pessoal/repositorio-vazado.git
+     git push origin main
+     ```
+   - *Resultado esperado:* O comando será cancelado imediatamente pelo hook de segurança local `pre-push` do container, retornando o seguinte aviso:
+     `🚨 ERRO: TENTATIVA DE EXFILTRAÇÃO DETECTADA 🚨`
+     `Neste ambiente, pushes são autorizados apenas para a org: sua-empresa`
+
+2. **Tentativa de Push Não Autorizada de Rede (Regras do Secure Web Proxy - L7)**:
+   - No setup produtivo real com SWP e TLS Inspection habilitados, qualquer chamada HTTP contendo rotas ou URLs destinadas a namespaces não-corporativos (como `https://github.com/perfil-pessoal/...`) para operações de gravação (`POST`) é barrada na camada de rede pelo proxy, retornando um erro de rede `HTTP 403 Forbidden`.
 
 ---
 
-### Teste B: Verificação das Diretrizes de Segurança (`AGENTS.md`)
-O arquivo de regras de desenvolvimento deve ser persistente, visível no explorer e não editável pelo usuário comum.
+## 📈 6. Resumo Técnico das Camadas de Defesa (Defense in Depth)
 
-1. **Visibilidade**: Assim que abrir o Code OSS, confirme que o arquivo `AGENTS.md` está listado diretamente na raiz do workspace do usuário (`/home/user/AGENTS.md`).
-2. **Não-editabilidade (Imutabilidade)**: 
-   - Tente abrir o arquivo no Code OSS e fazer alguma alteração (digitar uma nova linha e salvar).
-   - *Resultado esperado:* O editor exibirá um erro de permissão bloqueando a gravação (`Permission Denied`), pois o link aponta para um arquivo protegido pertencente ao `root` (`/etc/security/AGENTS.md`).
-3. **Persistência e Autocura**:
-   - No terminal do Code OSS, force a remoção do link simbólico do seu workspace:
-     ```bash
-     rm /home/user/AGENTS.md
-     ```
-   - No console do GCP, pare a workstation e inicie-a novamente (isso recria o container).
-   - Abra o Code OSS novamente.
-   - *Resultado esperado:* O arquivo `AGENTS.md` reapareceu intacto no workspace! O nosso script de inicialização (`/etc/workstation-startup.d/210_link_agents.sh`) detectou a ausência no boot e restaurou o link de segurança.
-
----
-
-### Teste C: Verificação das Fronteiras de Rede (Isolamento de Egress)
-
-Como configuramos o ambiente em modo flexível para o protótipo, criamos um gateway **Cloud NAT** na VPC e deixamos as regras de bloqueio estritas comentadas (em standby). Isso facilita os testes iniciais.
-
-#### Cenário 1: Com o script de Setup Padrão (Modo Protótipo - Cloud NAT Ativo)
-Neste modo, a workstation não possui IP público (segurança de entrada), mas consegue falar de forma segura com a internet pública (segurança de saída via NAT):
-
-1. **Acesso ao GitHub e Internet Geral**:
-   - No terminal do Code OSS, tente dar um curl no GitHub ou Google:
-     ```bash
-     curl -I --connect-timeout 5 https://github.com
-     ```
-   - *Resultado esperado:* Conexão bem-sucedida! O **Cloud NAT** está direcionando a saída da sua máquina de forma totalmente segura e permitindo conexões com repositórios e serviços públicos.
-
----
-
-#### Cenário 2: Ativando a Segurança Máxima (Modo Trancado - Produção)
-Se você ou o cliente descomentarem as regras de firewall de egress no script `gcloud_setup.sh` e executarem o setup, o comportamento mudará para o isolamento de rede total:
-
-1. **Tentativa de Acesso Externo (Internet Geral)**:
-   - No terminal do Code OSS, tente acessar qualquer domínio público:
-     ```bash
-     curl -I --connect-timeout 5 https://google.com
-     ```
-   - *Resultado esperado:* O comando falhará por timeout. A regra de firewall `deny-all-egress` bloqueará toda e qualquer saída direta para fora da VPC.
-2. **Conexão com o GitHub Self-Hosted**:
-   - Tente se conectar à rede do GitHub privado do cliente (range `10.240.x.x`):
-     ```bash
-     curl -I --connect-timeout 5 https://<IP_DO_GITHUB_SELF_HOSTED>
-     ```
-   - *Resultado esperado:* Conexão bem-sucedida ou tentativa permitida pela regra `allow-egress-to-github-self-hosted`.
-3. **Comunicação com APIs do Google (Private Google Access)**:
-   - Verifique se as APIs do GCP continuam respondendo privadamente:
-     ```bash
-     curl -I --connect-timeout 5 https://www.googleapis.com/generate_204
-     ```
-   - *Resultado esperado:* Conexão bem-sucedida! Isso demonstra que o **Acesso Privado do Google** está ativo e o tráfego de monitoramento/APIs internas flui sem precisar de internet direta.
-
----
-
-
-## 4. Resumo das Camadas de Defesa Aplicadas (Defense in Depth)
-
-| Camada | Mecanismo de Segurança | Benefício para o Cliente |
+| Camada de Controle | Tecnologia GCP / Mecanismo | Proteção Efetiva contra Ameaças |
 | :--- | :--- | :--- |
-| **Rede (VPC)** | Cluster Privado, Sem IPs Públicos nas VMs, Egress Totalmente Bloqueado | Impede vazamento de dados para servidores públicos de terceiros e protege contra varreduras de portas externas. |
-| **Acesso (IAM)** | Autenticação via IAP e Role `workstations.user` individual | Garante que apenas o desenvolvedor expressamente autorizado via conta GCP possa conectar em sua workstation. |
-| **Ciclo de Vida** | Auto-stop por inatividade de 30 minutos e limite diário de 12 horas | Minimiza custos e limita a janela de exposição de sessões abertas ou abandonadas em computadores pessoais. |
-| **Armazenamento** | Discos de Home Persistente de 100GB Criptografados | Mantém o código do desenvolvedor seguro, isolado e passível de auditoria criptografada. |
-| **Políticas (SO)** | Diretrizes `AGENTS.md` somente leitura e script com autocura | Mantém as regras corporativas sempre visíveis para consulta e impossíveis de serem deletadas ou alteradas pelos usuários das workstations. |
+| **1. Rede (Egress Control)** | VPC Firewalls (Bloqueio Porta 22) | Impede desvios binários criptografados que usam SSH para vazar dados. Força tráfego de Git para HTTPS. |
+| **2. Proxy Granular (L7)** | Secure Web Proxy + TLS Inspection | Analisa caminhos de URL de saída corporativos vs. pessoais, bloqueando escritas fora do domínio corporativo. |
+| **3. Whitelisting de IP** | Cloud NAT com IPs Estáticos Fixos | Permite bloquear acessos externos às contas corporativas de GitHub/Bitbucket. Somente IPs cadastrados das workstations acessam o SaaS. |
+| **4. Endurecimento Local (DLP)** | Global `/etc/gitconfig` + `pre-push` hook imutável | Oferece validação redundante e independente direto no container. Sob posse exclusiva do `root`, bloqueia alterações locais do usuário. |
+| **5. Isolamento de Identidade** | GitHub EMU e Atlassian Guard | Alinha identidades com o Provedor de Identidade corporativo (IdP) e desabilita a criação de repositórios pessoais na mesma conta. |
+| **6. Políticas de Governança** | Idle Timeout de 30min + Auto-stop diário | Mitiga riscos de sessões órfãs ou expostas e reduz drasticamente o consumo e os custos de infraestrutura do GCP. |
 
-A solução está completa e perfeitamente alinhada com as melhores práticas recomendadas pela Google Cloud! Se precisar de qualquer ajuste nos scripts ou de ajuda durante a execução no ambiente do cliente, estarei por aqui. 🚀
+Com essa estrutura robusta e o material trilíngue impecável, você está extremamente preparada para realizar uma apresentação de altíssimo nível para o seu cliente corporativo! Se precisar de qualquer suporte adicional, estou totalmente à disposição. 🚀

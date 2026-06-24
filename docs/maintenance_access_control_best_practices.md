@@ -1,14 +1,14 @@
-# Asset 2: Melhores Práticas de Controle de Acesso e Manutenção Preventiva
+# Asset 2: Melhores Práticas de Controle de Acesso, Manutenção e Imagens Customizadas
 
-Este guia prático foi criado sob medida para ajudar você (Sabrina) e o seu cliente a estabelecerem controles rigorosos de **IAM (Identity and Access Management)**, **segurança operacional** e **manutenção recorrente** para o ambiente de **Cloud Workstations**.
+Este guia prático descreve as melhores práticas de **Controle de Acesso (IAM/IAP)**, **Manutenção Preventiva** e, especialmente, os **Requisitos Indispensáveis para Imagens Customizadas** no ecossistema do **Cloud Workstations**.
 
-A segurança de uma Workstation não depende apenas da rede VPC fechada (Asset 1); ela exige que o acesso seja estritamente controlado e que o ciclo de vida das imagens de desenvolvimento seja mantido atualizado contra vulnerabilidades de forma contínua.
+A segurança e estabilidade das workstations dependem não apenas de uma rede VPC isolada (Asset 1), mas também do controle rígido de identidades, da conformidade operacional contínua e de um ciclo de vida estruturado para as imagens Docker utilizadas pelos desenvolvedores.
 
 ---
 
 ## 📋 Resumo Executivo: Pré vs. Pós-Criação
 
-Para garantir o funcionamento regular e seguro do ambiente, dividimos as ações em duas fases críticas:
+Para garantir o funcionamento regular e seguro das workstations corporativas, o ciclo operacional é estruturado em duas fases críticas:
 
 ```mermaid
 gantt
@@ -16,143 +16,105 @@ gantt
     dateFormat  YYYY-MM-DD
     section Antes da Criação (Planejamento e Setup)
     Configurar IAM de Admin e Dev           :active, first_iam, 2026-06-01, 3d
-    Criar Service Accounts Dedicadas       :active, service_acct, after first_iam, 2d
-    Ativar Cloud KMS (CMEK)                :active, kms_setup, after service_acct, 1d
+    Modelagem da Imagem Docker Customizada :active, docker_design, after first_iam, 2d
+    Ativar Cloud KMS (CMEK)                :active, kms_setup, after docker_design, 1d
     Definir Políticas de Autoclose e Idle  :active, policy_def, after kms_setup, 2d
     section Depois da Criação (Manutenção Contínua)
     Auditoria de Acesso Recorrente (IAP)   :crit, access_audit, after policy_def, 10d
     Scan de Vulnerabilidades (Container Analysis) :crit, vuln_scan, after policy_def, 10d
     Rebuild Mensal da Imagem Customizada   :crit, image_rebuild, after policy_def, 10d
-    Revisão de Logs no Cloud Logging       :crit, log_review, after policy_def, 10d
+    Atualização de Certificados do Proxy L7:crit, cert_update, after policy_def, 10d
 ```
 
 ---
 
-## 1. Controle de Acesso (IAM e IAP)
+## 1. Requisitos Indispensáveis e Estrutura Base para Imagens Customizadas
 
-O princípio do **Menor Privilégio** é o coração dessa estratégia. Devemos separar rigidamente quem administra a infraestrutura de quem consome as workstations.
+Uma imagem customizada no Cloud Workstations é um container Docker herdado de uma imagem base homologada que é empacotado com ferramentas de desenvolvimento, utilitários corporativos e configurações imutáveis de conformidade. 
+
+O cliente deve seguir estes requisitos indispensáveis e estruturas recomendadas para criar e manter imagens de desenvolvimento seguras:
+
+### 1.1 Requisitos Indispensáveis (Hard Requirements)
+
+1. **Herança de Imagem Base Oficial**:
+   - Toda imagem customizada deve herdar obrigatoriamente de uma imagem oficial do Google (disponíveis no Artifact Registry oficial, como `us-central1-docker.pkg.dev/cloud-workstations-images/predefined/code-oss:latest` para desenvolvimento geral ou `.../predefined/base:latest` para outras IDEs).
+   - **Por que é obrigatório?** As imagens oficiais do Google vêm pré-configuradas com os proxies gRPC, agentes de comunicação de rede do control plane e dependências de runtime que permitem ao serviço do Cloud Workstations se conectar e gerenciar a sessão da IDE de forma segura.
+2. **Contexto de Execução Não-Root (`user:1000`)**:
+   - Por segurança, o container deve alternar o contexto de execução de volta para o usuário comum (`USER user` de UID/GID `1000`) ao final do Dockerfile.
+   - **Por que é obrigatório?** Impedir que o desenvolvedor final acesse o terminal e as ferramentas da IDE como `root` evita a desativação acidental ou intencional de controles de segurança locais do sistema operacional (como a manipulação de regras globais do Git e regras de proxy).
+3. **Gerenciamento de Certificados CA Corporativos**:
+   - A imagem deve conter o pacote `ca-certificates` instalado. Para permitir inspeção profunda TLS em proxies corporativos, deve existir uma pasta estruturada para acomodar certificados adicionais.
+   - Os certificados devem ser copiados e ativados via `update-ca-certificates` durante a compilação da imagem.
+4. **Endurecimento do Git e Bloqueio de SSH**:
+   - A imagem deve conter um arquivo `/etc/gitconfig` gravado pelo usuário `root` (com permissões somente-leitura `644`), contendo regras obrigatórias de redirecionamento de requisições de SSH para HTTPS.
+   - Isso garante que o desenvolvedor use o protocolo HTTPS, permitindo a inspeção de caminhos pelo Secure Web Proxy (SWP).
+
+### 1.2 Estrutura Base Recomendada de Pastas
+
+Para manter a conformidade do ambiente, estruture o sistema de arquivos do seu container com os seguintes diretórios corporativos padrões:
+
+* `/etc/security/`: Pasta administrativa para armazenar diretrizes locais e políticas de conformidade do cliente (ex: `AGENTS.md`), visíveis no workspace do usuário em formato somente-leitura.
+* `/etc/workstation-startup.d/`: Pasta padrão de boot do sistema. Qualquer script executável colocado aqui (ex: `210_link_agents.sh`) é disparado de forma automática como `root` assim que o container é ligado, após a montagem do disco `/home`. Ideal para autodiagnóstico e redefinição de links de segurança.
+* `/etc/git/templates/hooks/`: Diretório base para armazenar templates imutáveis de hooks do Git (ex: `pre-push`). No boot ou ao criar novos repositórios locais, esses ganchos interceptam comandos para validar a conformidade das URLs remotas.
+* `/usr/local/share/ca-certificates/`: Diretório padrão do Debian/Ubuntu para depósito de certificados corporativos privados `.crt`, necessários para validar a confiança nas cadeias de decodificação TLS.
+
+---
+
+## 2. Controle de Acesso e IAM (Identity and Access Management)
+
+O princípio do **Menor Privilégio** e do **Zero Trust** devem reger a atribuição de permissões no Google Cloud.
 
 ### 🛑 ANTES DA CRIAÇÃO (Configuração de Segurança Inicial)
 
 #### A. Segregação de Papéis no IAM (Roles)
 Nunca conceda privilégios amplos (como `roles/owner` ou `roles/editor`) aos desenvolvedores ou administradores de workstations no projeto. Utilize papéis específicos:
-
-* **Para Administradores da Infraestrutura (Ex: Equipe de Platform/Cloud Security)**:
-  - `roles/workstations.admin` (Gerencia clusters, configurações e as instâncias, mas não permite acessar o código do desenvolvedor).
+* **Equipe de Infraestrutura e Plataforma (Admins)**:
+  - `roles/workstations.admin` (Permite criar, deletar e gerenciar clusters e configurações de workstations, mas não concede acesso de leitura ao terminal interno ou código dos desenvolvedores).
   - `roles/compute.networkAdmin` (Gerencia redes VPC, subredes e firewalls).
-  - `roles/artifactregistry.admin` (Gerencia repositórios de imagens).
-* **Para os Desenvolvedores (Os usuários finais da Workstation)**:
-  - `roles/workstations.user` (Permite iniciar, parar e usar a workstation).
+  - `roles/artifactregistry.admin` (Gerencia repositórios de imagens Docker).
+* **Desenvolvedores (Usuários Finais)**:
+  - `roles/workstations.user` (Permite iniciar, parar e usar a workstation associada).
   - > [!IMPORTANT]
-    > **Regra de Ouro**: Esse papel **NÃO** deve ser atribuído em nível de projeto. Ele deve ser vinculado **individualmente a cada máquina de workstation criada**. Assim, o Desenvolvedor A não consegue iniciar ou bisbilhotar a workstation do Desenvolvedor B.
+    > **Regra de Ouro**: O papel `roles/workstations.user` **NÃO** deve ser concedido em nível de projeto ou cluster. Ele deve ser atribuído **individualmente em cada instância de workstation criada**. Isso impede que o Desenvolvedor A acesse ou modifique o ambiente de trabalho do Desenvolvedor B.
 
 #### B. Service Accounts de Serviço de Menor Privilégio
-Durante a criação de uma Workstation Configuration, você define uma Service Account que a VM usará para interagir com os serviços do Google Cloud:
-* **Prática recomendada**: Crie uma Service Account customizada (ex: `sa-workstation-runner@...`) em vez de usar a padrão do Compute Engine.
-* Conceda a ela apenas as permissões estritamente necessárias (como permissões para ler e gravar logs no Cloud Logging, escrever métricas de monitoramento e puxar imagens do Artifact Registry via papel `roles/artifactregistry.reader`).
-* Garanta que a conta usada pelo Cloud Build (`...-compute@developer.gserviceaccount.com` ou a Service Account padrão do Cloud Build) tenha permissões de escrita apenas para o Artifact Registry (`roles/artifactregistry.writer`).
-
-#### C. Proteção Adicional com Context-Aware Access (IAP)
-O tráfego de acesso à workstation passa obrigatoriamente pelo **Identity-Aware Proxy (IAP)** do Google.
-* **Prática recomendada**: Configure níveis de acesso no **Access Context Manager** da organização.
-* **Benefício**: Você pode ditar que o desenvolvedor só conseguirá acessar a workstation se ele:
-  1. Estiver autenticado com a conta corporativa (Google Workspace/Identity).
-  2. Estiver conectando de um IP de origem homologado (Ex: IP de saída do escritório ou da VPN corporativa).
-  3. Estiver utilizando um dispositivo corporativo gerenciado que cumpra regras de segurança (como disco criptografado e sistema operacional atualizado).
+Sempre associe uma **Service Account customizada** às configurações das Cloud Workstations (Workstation Configuration), em vez de herdar a Service Account padrão do Compute Engine.
+* Crie uma conta específica (ex: `sa-workstation-runner@...`) concedendo apenas as permissões de gravação de logs no Cloud Logging, métricas no Cloud Monitoring e leitura de imagens no Artifact Registry (`roles/artifactregistry.reader`).
 
 ---
 
-### 🔄 DEPOIS DA CRIAÇÃO (Manutenção Recorrente e Monitoramento)
+## 3. Manutenção Operacional e Controle de Vulnerabilidades
 
-#### A. Auditoria Periódica de Acessos
-* **Ação trimestral**: Utilize o **IAM Policy Troubleshooter** e ferramentas de IAM Recommender para detectar permissões excessivas atribuídas a desenvolvedores.
-* **Revogação Automatizada**: Integre ao processo de offboarding da empresa um script ou automação (usando Terraform ou chamadas de API gcloud) para excluir a workstation individual e revogar todas as vinculações de IAM do usuário desligado imediatamente.
-
-#### B. Auditoria Ativa de Logs de Acesso
-Ative os **Data Access Audit Logs** (logs de acesso a dados) para a API do Cloud Workstations no console IAM.
-* **Por que fazer?** Isso gera registros de auditoria detalhados no **Cloud Logging** sempre que alguém inicia (`Start`), para (`Stop`), edita uma configuração ou estabelece uma conexão via navegador/SSH na máquina.
-* Crie alertas automáticos no Cloud Logging para conexões suspeitas fora do horário de trabalho padrão do desenvolvedor.
-
----
-
-## 2. Ciclo de Vida e Otimização de Custos (VM Lifecycle)
-
-Manter máquinas de desenvolvimento ativas 24 horas por dia, 7 dias por semana, gera desperdício de custo e amplia a janela de ataque caso uma máquina seja comprometida.
-
-### 🛑 ANTES DA CRIAÇÃO (Configuração de Segurança Inicial)
-
-#### A. Timeout de Inatividade (Auto-Stop / Idle Timeout)
-As workstations rodam em containers mantidos por VMs por trás dos panos.
-* **Prática recomendada**: Configure a sua Workstation Configuration para encerrar automaticamente as instâncias após um período de inatividade.
-  ```bash
-  --idle-timeout="1800s" # 30 minutos de inatividade desliga a workstation automaticamente
-  ```
-* **Como funciona?** Se o desenvolvedor fechar o navegador e parar de interagir com o Code OSS por 30 minutos, o container e a VM subjacente são desligados. Os dados dele não são perdidos (estão no disco persistente `/home/user`), mas o custo de processamento cai para zero e o vetor de ataque é removido.
-
-#### B. Limite de Execução Diário (Running Timeout)
-Mesmo se o desenvolvedor esquecer algum script rodando que impeça a máquina de entrar em estado ocioso ("idle"), você deve forçar um encerramento diário.
-* **Prática recomendada**: Defina um timeout de execução máxima.
-  ```bash
-  --running-timeout="43200s" # Força o desligamento automático após 12 horas consecutivas rodando
-  ```
-* **Por que fazer?** Além de economizar, isso força o container a ser destruído e recriado a partir da imagem Docker limpa na manhã seguinte. Qualquer malware, script temporário perigoso ou modificação indesejada feita no sistema de arquivos raiz do container (fora da home persistente) é 100% eliminado, garantindo um ambiente limpo ("clean-state") todos os dias.
-
-#### C. Criptografia Avançada com CMEK (Customer-Managed Encryption Keys)
-Por padrão, os discos das workstations são criptografados com chaves gerenciadas pelo Google.
-* **Prática recomendada**: Se o cliente exige conformidade máxima (PII, PCI-DSS ou segredo industrial), crie uma chave criptográfica simétrica no **Cloud KMS** (Key Management Service) no mesmo projeto.
-* Atribua a chave à configuração usando o parâmetro `--encryption-key`. Os dados dos desenvolvedores em `/home/user` estarão trancados sob chaves de criptografia controladas diretamente pela equipe de segurança do cliente, com a capacidade de revogar a chave em caso de incidente cibernético extremo.
-
----
-
-### 🔄 DEPOIS DA CRIAÇÃO (Manutenção Recorrente e Monitoramento)
-
-#### A. Ciclo Mensal de Patching e Atualização de Imagem
-Sua imagem customizada possui o Google Chrome e o Code OSS. Essas ferramentas sofrem dezenas de atualizações de segurança por mês. Mantê-las intocadas criará vulnerabilidades graves.
-
-**O Processo de Atualização Mensal Segura**:
+### 🔄 DEPOIS DA CRIAÇÃO (Rotinas de Sustentação Regular)
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    Equipe_Sec->>Cloud_Build: Atualiza Dockerfile / Executa gcloud builds submit
-    Cloud_Build->>Artifact_Registry: Puxa imagem base recente e compila nova versão
-    Artifact_Registry->>Vulnerability_Scanning: Escaneia imagem por vulnerabilidades (CVEs)
-    Vulnerability_Scanning-->>Equipe_Sec: Envia relatório de saúde (OK / Crítico)
-    Equipe_Sec->>Workstations_Config: Atualiza a configuração para apontar para a nova Tag/Digest
-    Workstations_Config->>Desenvolvedores: Na próxima inicialização, os Devs recebem a máquina atualizada!
+flowchart TD
+    Build["Cloud Build Compila a Imagem"] --> AR["Upload para Artifact Registry"]
+    AR --> Scan["Container Analysis escaneia a imagem"]
+    Scan -->|Se vulnerabilidades críticas| Alert["Alerta a equipe de SecOps"]
+    Scan -->|Se imagem segura| Deploy["Utilizada nas Cloud Workstations"]
 ```
 
-1. **Rebuild Automatizado**: Configure um gatilho mensal (via **Cloud Build Triggers** agendado por Cloud Scheduler) para recompilar a imagem. A compilação forçará o `apt-get update && apt-get install google-chrome-stable` a buscar o navegador mais recente disponível e atualizar as extensões de segurança do VS Code.
-2. **Atualização Invisível**: Quando a nova imagem for publicada no Artifact Registry com a tag `:latest` (ou usando tags de versão específicas), o Cloud Workstations **não desliga as máquinas dos usuários ativos imediatamente**. Ele espera que as máquinas sejam desligadas (manualmente ou via idle-timeout).
-3. **Carregamento Automático**: Quando o desenvolvedor iniciar a workstation no dia seguinte, o Cloud Workstations detectará que a configuração aponta para uma imagem mais recente no Artifact Registry e criará o container do usuário já utilizando a versão segura remendada, sem que ele perca nenhum arquivo do seu diretório `/home/user`.
+#### A. Reconstrução Periódica de Imagens (Rebuild Mensal)
+Os patches de segurança de sistemas operacionais e ferramentas de desenvolvimento (como o Code OSS e o Chrome) são lançados quase diariamente.
+* **Prática recomendada**: Configure um gatilho de agendamento (Cloud Scheduler + Cloud Build) para realizar um **rebuild completo** da imagem de desenvolvimento pelo menos **uma vez por mês** ou imediatamente após a divulgação de vulnerabilidades de dia zero (0-day). Isso garante pacotes sempre atualizados no boot da máquina.
 
-#### B. Varredura Contínua de Vulnerabilidades (Vulnerability Scanning)
-Ative o **Artifact Registry Vulnerability Scanning** (parte do serviço Container Analysis do Google Cloud).
-* **Como funciona**: Toda vez que o Cloud Build envia uma imagem customizada para o Artifact Registry, o Google Cloud faz uma varredura estática de segurança do sistema operacional (Ubuntu/Debian) e dos pacotes instalados.
-* Ele exibe uma lista de CVEs conhecidas e sua gravidade (Baixa, Média, Alta, Crítica).
-* **Ação de Manutenção**: Bloqueie a promoção de configurações para produção se a imagem correspondente contiver vulnerabilidades com status "Critical" ou "High" que possuam correção disponível ("fix available").
+#### B. Escaneamento Automático de Vulnerabilidades (Container Analysis)
+Ative a API **Container Analysis** no projeto GCP para monitorar as imagens armazenadas no Artifact Registry.
+* **Funcionamento**: A ferramenta realiza análises automáticas nas imagens e emite alertas caso vulnerabilidades conhecidas (CVEs) sejam descobertas em pacotes instalados.
+
+#### C. Ciclo de Vida Automatizado (Idle Timeout e Auto-Stop)
+Estações de trabalho esquecidas ligadas são focos de risco à segurança e de custos desnecessários.
+* **Prática recomendada**: Defina o tempo de desligamento automático por inatividade (**Idle Timeout**) em no máximo **30 minutos** (`1800s`), e um tempo de execução máximo diário de **12 horas** (`43200s`) na Workstation Configuration.
+* **Resultado**: Garante que os containers sejam destruídos regularmente, forçando a atualização constante a partir da imagem Docker consolidada mais recente no próximo boot.
 
 ---
 
-## 3. Gestão e Backup de Dados Persistentes do Usuário
+## 4. Práticas de Isolamento de Identidade em SaaS Cloud
 
-O diretório `/home/user` do desenvolvedor fica montado em um disco rígido persistente SSD do GCP (Compute Engine Persistent Disk). O sistema operacional e as ferramentas ficam no container, mas todo o código, configurações e histórico de comandos ficam salvos no disco persistente.
+Além dos controles internos do GCP, para consolidar a barreira de exfiltração de dados para contas pessoais de GitHub/Bitbucket do usuário corporativo, oriente o cliente a configurar:
 
-### ANTES DA CRIAÇÃO (Configuração de Segurança Inicial)
-
-#### A. Definir Política de Recuperação de Disco (Reclaim Policy)
-* Ao configurar as workstations, decida o que acontece com o disco do desenvolvedor caso sua conta de workstation seja excluída.
-* No nosso script `gcloud_setup.sh`, usamos:
-  ```bash
-  --disk-reclaim-policy="delete"
-  ```
-  Isso significa que, se excluirmos a workstation de um desenvolvedor por offboarding, o disco contendo seu código é excluído permanentemente, impedindo vazamento de dados.
-* Se a política do cliente for reter o código para auditoria antes de apagar, altere para `--disk-reclaim-policy="retain"`. O disco continuará existindo como um recurso órfão no Compute Engine para análise e backup, devendo ser destruído manualmente após a auditoria.
-
-### DEPOIS DA CRIAÇÃO (Manutenção Recorrente e Monitoramento)
-
-#### A. Backup Automatizado de Discos (Snapshots)
-O Cloud Workstations não faz backup automático nativo do conteúdo do disco persistente `/home/user`.
-* **Prática recomendada**: Crie uma política de snapshots programados (**Snapshot Schedules**) no console do Compute Engine.
-* Associe essa política para tirar snapshots diários ou semanais dos discos das workstations (que começam com o prefixo `workstation-`).
-* **Por que fazer?** Caso o desenvolvedor delete um código crítico sem commitar no GitHub por engano, ou sua área de trabalho sofra alguma corrupção de arquivos, você poderá restaurar o disco persistente do usuário para o estado do dia anterior em minutos.
+1. **GitHub Enterprise Managed Users (EMU)**:
+   - Configura identidades de usuários pertencentes inteiramente à corporação, impedindo a criação de perfis pessoais ou forking para fora do controle da empresa.
+2. **Atlassian Guard**:
+   - Gerencia e restringe o acesso ao Bitbucket Cloud baseado nas contas corporativas sincronizadas diretamente com o provedor de identidade (IdP) do cliente.
