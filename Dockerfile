@@ -59,6 +59,9 @@ RUN mkdir -p /usr/local/share/ca-certificates/corp-proxy \
 COPY scripts/210_setup_corporate_git.sh /etc/workstation-startup.d/210_setup_corporate_git.sh
 RUN chmod +x /etc/workstation-startup.d/210_setup_corporate_git.sh
 
-# Retornar o contexto de execução para o usuário de desenvolvimento padrão (user com UID 1000)
-# Isso impede que o usuário final acesse a IDE ou terminais padrão como root
-USER user
+# IMPORTANTE: O contexto final de execução deve permanecer como root no Dockerfile.
+# O orquestrador do Cloud Workstations exige privilégios de root no boot inicial
+# do container para montar com segurança os discos persistentes do '/home/user'
+# e executar os scripts de inicialização em '/etc/workstation-startup.d/'.
+# Fique tranquilo: o próprio plano de controle do GCP se encarrega de rebaixar
+# e abrir a sessão web da IDE e dos terminais sob o usuário comum 'user' (UID 1000).
