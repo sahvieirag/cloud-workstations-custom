@@ -1,6 +1,6 @@
 # Asset 1: Mejores Prácticas de Redes y Aislamiento de Tráfico SaaS
 
-Esta guía técnica describe cómo diseñar e implementar un entorno de **Cloud Workstations** altamente seguro en Google Cloud Platform (GCP). El objetivo principal de esta guía es **permitir el acceso a servicios SaaS en la nube (GitHub.com y Bitbucket.org) para fines corporativos, mientras se impide estrictamente que los usuarios finales compartan o filtren propiedad intelectual a repositorios o cuentas personales.**
+Esta guía técnica describe cómo diseñar e implementar un entorno de **Cloud Workstations** altamente seguro en Google Cloud Platform (GCP). El objetivo principal de esta guía es **permitir el acceso a servicios SaaS en la nube (GitHub.com e Bitbucket.org) para fines corporativos, mientras se impide estrictamente que los usuarios finales compartan o filtren propiedad intelectual a repositorios o cuentas personales.**
 
 ---
 
@@ -10,6 +10,10 @@ Para resolver el desafío técnico donde los dominios como `github.com` y `bitbu
 
 ```mermaid
 graph TD
+    subgraph Dispositivo_Fisico ["Dispositivo Físico (Desarrollador)"]
+        UserBrowser["Navegador Web (Sesión de Web IDE)"]
+    end
+
     subgraph Container_Workstation ["Entorno del Desarrollador (Workstation)"]
         Git["Comando Git (HTTPS)"]
         CA["Certificado CA del Proxy instalado"]
@@ -28,6 +32,10 @@ graph TD
         PersonalSaaS["SaaS Personal (Push BLOQUEADO)"]
     end
 
+    %% DLP BeyondCorp
+    UserBrowser <== "BeyondCorp Enterprise DLP (Bloquea Copiar/Pegar/Descargar)" ==> Container_Workstation
+
+    %% Flujo Git
     Git -->|1. Tráfico HTTPS en Puerto 443| FW
     FW -->|2. Envía al Proxy| SWP
     SWP -->|3. Inspección de Path/Verbo HTTP| TLS
@@ -49,9 +57,9 @@ Habilite obligatoriamente **Private Google Access** en la subred de la VPC. Sin 
 
 ---
 
-## 3. Estrategia de Restricción de Escritura SaaS (GitHub & Bitbucket)
+## 3. Estratégia de Restricción de Escritura SaaS (GitHub & Bitbucket)
 
-Para restringir el push de código a espacios de nombres personales manteniendo el acceso corporativo, se emplean tres estrategias de red combinadas:
+Para restringir el push de código a espacios de nombres personales manteniendo el acceso corporativo, se emplean cuatro pilares conjuntos de protección de red y datos:
 
 ### 3.1 Cloud Secure Web Proxy (SWP) con TLS Inspection
 Un firewall L3/L4 común no puede filtrar rutas de URL HTTPS. En GCP, la mejor práctica para la filtración de capa de aplicación (L7) es el **Cloud Secure Web Proxy (SWP)** integrado con **TLS Inspection**.
@@ -61,14 +69,20 @@ Un firewall L3/L4 común no puede filtrar rutas de URL HTTPS. En GCP, la mejor p
    - **Permitido**: `https://github.com/su-empresa/*` (GET y POST)
    - **Permitido**: `https://bitbucket.org/su-empresa/*` (GET y POST)
    - **Bloqueado**: `https://github.com/perfil-personal/*` (Cualquier POST/push)
-3. **Bloqueo Selectivo por Verbos HTTP**: Es posible configurar el SWP para permitir comandos de lectura (`GET` para `git clone/pull`) hacia repositorios públicos externos (facilitando la descarga de librerías públicas), pero **bloquear estrictamente cualquier solicitud de escritura** (`POST`, `PUT`, `PATCH`) hacia destinos fuera de la organización corporativa aprobada.
+3. **Bloqueo Seletivo por Verbos HTTP**: Es posible configurar el SWP para permitir comandos de lectura (`GET` para `git clone/pull`) hacia repositorios públicos externos (facilitando la descarga de librerías públicas), pero **bloquear estrictamente cualquier solicitud de escritura** (`POST`, `PUT`, `PATCH`) hacia destinos fuera de la organización corporativa aprobada.
 
-### 3.2 Bloqueo de SSH (Puerto 22) de Salida
+### 3.2 Prevención de Pérdida de Datos con BeyondCorp Enterprise (BCE) DLP
+El aislamiento de red no impide que un usuario copie el código fuente expuesto en el editor y lo pegue en un bloc de notas de su máquina física. Para sellar este vector físico de exfiltración de datos, implementamos las reglas de DLP de **BeyondCorp Enterprise**:
+* **Bloqueo del Portapapeles (Clipboard)**: Impide las acciones de copiar y pegar (copy/paste) entre el portapapeles del computador físico del desarrollador y el editor Web de las Cloud Workstations.
+* **Bloqueo de Descargas**: Restringe la capacidad de realizar descargas de archivos de código de la workstation al sistema de archivos local del usuario.
+* **Bloqueo de Impresión (Print)**: Desactiva la posibilidad de imprimir el contenido de la pantalla o guardarlo en un PDF local sin autorización previa.
+
+### 3.3 Bloqueo de SSH (Puerto 22) de Salida
 El protocolo Git sobre SSH (`git@github.com:...`) viaja a través de un flujo binario cifrado de extremo a extremo sobre el puerto TCP 22. Dado que SSH no tiene el concepto de encabezados o rutas de URL HTTP, evita por completo las reglas de inspección del Secure Web Proxy.
 * **Mejor Práctica**: Implementar una regla de Firewall VPC con acción `DENY` y dirección `EGRESS` para impedir cualquier tráfico de salida destinado al puerto `22` en la subred de las workstations.
-* **Funcionamento**: Esto obliga al desarrollador y a las herramientas Git del contenedor a utilizar obligatoriamente el transporte HTTPS en el puerto `443`, que pasa por el filtro del proxy L7.
+* **Funcionamiento**: Esto obliga al desarrollador y a las herramientas Git del contenedor a utilizar obligatoriamente el transporte HTTPS en el puerto `443`, que pasa por el filtro del proxy L7.
 
-### 3.3 Cloud NAT con IPs Estáticas (IP Whitelisting)
+### 3.4 Cloud NAT con IPs Estáticas (IP Whitelisting)
 Asocie direcciones IP externas públicas **estáticas** (reservadas previamente en GCP Compute Engine) al gateway **Cloud NAT** de la VPC, en lugar de utilizar asignación dinámica automática de IPs.
 * **Beneficio**: Registre estas IPs estáticas de la empresa en las reglas de protección de IP (IP Allow List) de su organización de GitHub Enterprise Cloud o Bitbucket Cloud.
 * **Resultado**: El acceso al SaaS corporativo solo se aceptará cuando se origine desde workstations seguras (que salen por el NAT con las IPs registradas). Si un desarrollador intenta acceder a repositorios corporativos desde su máquina personal, el SaaS rechazará la conexión por estar fuera del rango de IPs permitido.
@@ -82,5 +96,6 @@ Para la construcción de su primera infraestructura de red segura con el objetiv
 1. **Aprovisionar la VPC Privada** y habilitar Private Google Access en la subred principal.
 2. **Configurar Cloud Secure Web Proxy (SWP)** con TLS Inspection integrado con Certificate Manager para interceptar y auditar el tráfico HTTPS saliente destinado a `github.com` y `bitbucket.org`.
 3. **Crear políticas de seguridad L7 en SWP** que bloqueen estrictamente los métodos POST/PUT/PATCH para rutas de URL fuera de la organización corporativa (por ejemplo, permitiendo únicamente `github.com/su-empresa/*` y `bitbucket.org/su-empresa/*`).
-4. **Implementar la Regla de Bloqueio SSH (Puerto 22)** desde el primer día de validación del entorno para forzar el uso del protocolo HTTPS, lo que permite la inspección del tráfico.
-5. **Asociar direcciones IP públicas estáticas a Cloud NAT** y registrarlas en la lista de permitidos (IP Allow List) de sus organizaciones corporativas de GitHub/Bitbucket SaaS para restringir el acceso únicamente a las conexiones que se originen en workstations autorizadas.
+4. **Habilitar Políticas de DLP de BeyondCorp Enterprise** en las configuraciones de workstation para bloquear el copiar, pegar y descargar datos a la máquina física.
+5. **Implementar la Regla de Bloqueo SSH (Puerto 22)** desde el primer día de validación del entorno para forzar el uso del protocolo HTTPS, lo que permite la inspección del tráfico.
+6. **Asociar direcciones IP públicas estáticas a Cloud NAT** y registrarlas en la lista de permitidos (IP Allow List) de sus organizaciones corporativas de GitHub/Bitbucket SaaS para restringir el acceso únicamente a las conexiones que se originen en workstations autorizadas.
